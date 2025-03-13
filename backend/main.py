@@ -6,25 +6,24 @@ import pandas as pd
 import openai
 import dotenv
 import os
+import time
+from typing import List, Dict, Any
+
 dotenv.load_dotenv()
-# Usa la variable de entorno correcta
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 app = FastAPI()
 
-# Cors allow *
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Server frontend
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Change in production
 cx_Oracle.init_oracle_client(
     lib_dir=r"C:\oracle\instantclient-basic-windows.x64-23.7.0.25.01\instantclient_23_7")
 
-# Change in production
 DB_CONFIG = {
     "username": "training_ai",
     "password": "Bitel*123",
@@ -48,34 +47,17 @@ def get_oracle_connection():
         return None
 
 
-@app.get("/api/table_names")
-async def get_table_names_endpoint():
-    """ Retorna la lista de tablas disponibles en la BD """
-    conn = get_oracle_connection()
+def get_all_table_names(conn):
     cursor = conn.cursor()
     cursor.execute("SELECT table_name FROM user_tables ORDER BY table_name")
     table_names = [row[0] for row in cursor.fetchall()]
     cursor.close()
-    conn.close()
-    return {"table_names": table_names}
-
-
-def get_table_data(conn, table_name, limit=30):
-    cursor = conn.cursor()
-
-    query = f"SELECT * FROM {table_name} WHERE ROWNUM <= :limit"
-    cursor.execute(query, {"limit": limit})
-
-    columns = [col[0] for col in cursor.description]
-    rows = cursor.fetchall()
-    cursor.close()
-
-    return pd.DataFrame(rows, columns=columns)
+    return table_names
 
 
 def get_table_metadata(conn, table_name):
     cursor = conn.cursor()
-    query = f"""
+    query = """
         SELECT COLUMN_NAME, DATA_TYPE
         FROM USER_TAB_COLUMNS
         WHERE TABLE_NAME = :table_name
@@ -86,39 +68,144 @@ def get_table_metadata(conn, table_name):
     return metadata
 
 
+def get_table_data(conn, table_name):
+    try:
+        cursor = conn.cursor()
+        query = f"SELECT * FROM {table_name}"
+        cursor.execute(query)
+        columns = [col[0] for col in cursor.description]
+        rows = cursor.fetchall()
+        cursor.close()
+        return pd.DataFrame(rows, columns=columns)
+    except Exception as e:
+        print(f"Error getting sample from {table_name}: {e}")
+        return pd.DataFrame()
+
+
+def get_all_database_info(max_tables=50):
+    """
+    Get metadata and sample data for all tables in the database.
+    Limit to max_tables to prevent overwhelming the API.
+    """
+    conn = get_oracle_connection()
+    if not conn:
+        return "Failed to connect to the database"
+
+    table_names = get_all_table_names(conn)
+
+    # Limit number of tables to process
+    if len(table_names) > max_tables:
+        print(
+            f"Limiting to {max_tables} tables out of {len(table_names)} total tables")
+        table_names = table_names[:max_tables]
+
+    database_info = []
+
+    for table_name in table_names:
+        try:
+            metadata = get_table_metadata(conn, table_name)
+            sample_df = get_table_data(conn, table_name)
+
+            if not sample_df.empty:
+                table_info = {
+                    "table_name": table_name,
+                    "columns": metadata,
+                    "sample": sample_df.to_markdown(index=False) if not sample_df.empty else "No data available"
+                }
+                database_info.append(table_info)
+        except Exception as e:
+            print(f"Error processing table {table_name}: {e}")
+
+    conn.close()
+
+    return database_info
+
+
+def format_database_info(database_info):
+    """Format the database info into a readable string for the LLM"""
+    formatted_info = "DATABASE SCHEMA INFORMATION:\n\n"
+
+    for table_info in database_info:
+        formatted_info += f"TABLE: {table_info['table_name']}\n"
+        formatted_info += "COLUMNS:\n"
+        for col, dtype in table_info['columns'].items():
+            formatted_info += f"- {col}: {dtype}\n"
+
+        formatted_info += "\nSAMPLE DATA:\n"
+        formatted_info += table_info['sample'] + "\n\n"
+        formatted_info += "-" * 50 + "\n\n"
+
+    return formatted_info
+
+
 class QueryRequest(BaseModel):
-    table_name: str
     prompt: str
 
 
-@app.post("/api/query_table")
-async def query_table(request: QueryRequest):
-    conn = get_oracle_connection()
-
+@app.post("/api/query_database")
+async def query_database(request: QueryRequest):
     try:
-        df = get_table_data(conn, request.table_name, limit=5)
-        metadata = get_table_metadata(conn, request.table_name)
-        conn.close()
+        # Get database information (limited to 10 tables to avoid context issues)
+        database_info = get_all_database_info(max_tables=30)
 
-        table_summary = (
-            f"La tabla '{request.table_name}' contiene las siguientes columnas:\n"
-            + "\n".join([f"- {col}: {dtype}" for col,
-                        dtype in metadata.items()])
-            + f"\n\nAquí hay una muestra:\n{df.to_markdown(index=False)}\n\n"
-            + f"Pregunta del usuario: {request.prompt}"
-        )
+        if isinstance(database_info, str):  # Error occurred
+            return {"error": database_info}
 
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # Format the database information for the LLM
+        formatted_db_info = format_database_info(database_info)
 
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Eres un asistente de SQL experto en análisis de bases de datos."},
-                {"role": "user", "content": table_summary},
-            ],
-            max_tokens=200
-        )
+        # Create system message with database context
+        system_message = """
+        Eres un asistente de SQL experto en análisis de bases de datos. 
+        Te han proporcionado información sobre el esquema de la base de datos.
+        Utiliza esta información para responder a las preguntas del usuario.
+        Si necesitas consultar datos específicos, sugiere la consulta SQL adecuada.
+        """
 
-        return {"response": response.choices[0].message.content.strip()}
+        # Create user message with the formatted database info and user prompt
+        user_message = f"""
+        {formatted_db_info}
+        
+        Pregunta del usuario: {request.prompt}
+        """
+
+        # Call OpenAI API with retry logic
+        max_retries = 3
+        retry_count = 0
+        backoff_time = 1
+
+        while retry_count < max_retries:
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",  # Use a model with larger context
+                    messages=[
+                        {"role": "system", "content": system_message},
+                        {"role": "user", "content": user_message},
+                    ],
+                    max_tokens=1000
+                )
+                return {"response": response.choices[0].message.content.strip()}
+            except openai.RateLimitError:
+                retry_count += 1
+                if retry_count < max_retries:
+                    time.sleep(backoff_time)
+                    backoff_time *= 2
+                else:
+                    return {"error": "OpenAI API rate limit exceeded. Please try again later."}
+            except Exception as e:
+                return {"error": f"Error calling OpenAI API: {str(e)}"}
+
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Server error: {str(e)}"}
+
+
+@app.get("/api/table_names")
+async def get_table_names_endpoint():
+    """Returns the list of tables available in the database"""
+    conn = get_oracle_connection()
+    if not conn:
+        return {"error": "Failed to connect to the database"}
+
+    table_names = get_all_table_names(conn)
+    conn.close()
+    return {"table_names": table_names}
