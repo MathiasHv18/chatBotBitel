@@ -106,22 +106,18 @@ const fetchTables = async () => {
   error.value = null;
 
   try {
-    // In a real application, this would be an API call
-    // Simulating API call with timeout
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const response = await fetch("http://127.0.0.1:8000/api/table_names");
+    const data = await response.json();
 
-    // Mock data
-    tables.value = [
-      { id: 1, name: "usuarios", recordCount: 1250 },
-      { id: 2, name: "productos", recordCount: 5432 },
-      { id: 3, name: "pedidos", recordCount: 8765 },
-      { id: 4, name: "categorias", recordCount: 42 },
-      { id: 5, name: "clientes", recordCount: 3201 },
-      { id: 6, name: "proveedores", recordCount: 187 },
-      { id: 7, name: "inventario", recordCount: 9543 },
-      { id: 8, name: "transacciones", recordCount: 12500 },
-      { id: 9, name: "empleados", recordCount: 310 },
-    ];
+    // Acceder a la propiedad table_names del objeto respuesta
+    const tableNames = data.table_names || [];
+
+    // Ahora mapea los nombres a objetos con id y recordCount
+    tables.value = tableNames.map((name, index) => ({
+      id: index + 1,
+      name,
+      recordCount: Math.floor(Math.random() * 10000), // Mock record count
+    }));
   } catch (err) {
     error.value =
       "Error al cargar las tablas de la base de datos. Por favor, inténtelo de nuevo.";

@@ -53,22 +53,22 @@ def get_oracle_connection():
         return None
 
 
-def getImportantSite(conn):
+def get_table_names(conn):
     cursor = conn.cursor()
-    query = 'select * from test_10K_isdn_age'
+    query = "SELECT table_name FROM user_tables ORDER BY table_name"
     cursor.execute(query)
-    listSites = cursor.fetchall()
+    table_names = cursor.fetchall()
     cursor.close()
-    return listSites
+    return [row[0] for row in table_names]
 
 
-@app.get("/api/test")
-async def get_site_conf():
+@app.get("/api/table_names")
+async def get_table_names_endpoint():
     conn = get_oracle_connection()
     if not conn:
         return {"error": "Could not connect to Oracle DB"}
 
-    df = getImportantSite(conn)
+    table_names = get_table_names(conn)
     conn.close()
 
-    return df
+    return {"table_names": table_names}
