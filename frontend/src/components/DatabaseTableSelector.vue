@@ -68,6 +68,13 @@
         >
           Seleccionar Tabla
         </button>
+        <router-link
+          :to="{ path: '/prompt', query: { table: selectedTable?.name } }"
+          class="select-button"
+          :class="{ disabled: !selectedTable }"
+        >
+          Ir a Prompt
+        </router-link>
       </div>
     </div>
   </div>
@@ -143,32 +150,27 @@ onMounted(() => {
 
 <style scoped>
 .database-selector {
-  padding: 1.5rem;
-  max-width: 72rem;
-  margin-left: auto;
-  margin-right: auto;
+  padding: 20px;
 }
 
 .title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 1.5rem;
+  font-size: 24px;
+  margin-bottom: 20px;
 }
 
 .loading-container {
   display: flex;
   justify-content: center;
-  margin-top: 2rem;
-  margin-bottom: 2rem;
+  align-items: center;
 }
 
 .loading-spinner {
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-left-color: #000;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
   animation: spin 1s linear infinite;
-  border-radius: 9999px;
-  height: 3rem;
-  width: 3rem;
-  border-bottom-width: 2px;
-  border-color: #1a202c;
 }
 
 @keyframes spin {
@@ -178,69 +180,40 @@ onMounted(() => {
 }
 
 .error-message {
-  background-color: #fed7d7;
-  border: 1px solid #f56565;
-  color: #c53030;
-  padding: 0.75rem 1rem;
-  border-radius: 0.25rem;
-  margin-bottom: 1rem;
+  color: red;
 }
 
 .search-container {
-  margin-bottom: 1rem;
+  margin-bottom: 20px;
 }
 
 .search-input {
   width: 100%;
-  padding: 0.5rem 1rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-}
-
-.search-input:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.5);
+  padding: 10px;
+  font-size: 16px;
 }
 
 .empty-message {
   text-align: center;
-  padding: 2rem 0;
-  color: #718096;
+  color: #888;
 }
 
 .tables-grid {
   display: grid;
-  gap: 1rem;
-}
-
-@media (min-width: 768px) {
-  .tables-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 1024px) {
-  .tables-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
 }
 
 .table-card {
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-  padding: 1rem;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
-}
-
-.table-card:hover {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: background-color 0.3s;
 }
 
 .table-card.selected {
-  background-color: #ebf8ff;
-  border-color: #4299e1;
+  background-color: #f0f0f0;
 }
 
 .table-content {
@@ -249,39 +222,41 @@ onMounted(() => {
 }
 
 .table-icon {
-  margin-right: 0.75rem;
-  color: #3182ce;
+  margin-right: 10px;
 }
 
 .table-name {
-  font-weight: 500;
+  font-size: 18px;
+  margin: 0;
 }
 
 .table-records {
-  font-size: 0.875rem;
-  color: #718096;
+  color: #666;
 }
 
 .actions-container {
-  margin-top: 2rem;
+  margin-top: 20px;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
 }
 
 .select-button {
-  padding: 0.5rem 1.5rem;
-  background-color: #3182ce;
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  background-color: #007bff;
   color: white;
-  border-radius: 0.5rem;
-  transition: background-color 0.2s;
-}
-
-.select-button:hover:not(.disabled) {
-  background-color: #2c5282;
+  transition: background-color 0.3s;
 }
 
 .select-button.disabled {
-  opacity: 0.5;
+  background-color: #ccc;
   cursor: not-allowed;
+}
+
+.select-button:not(.disabled):hover {
+  background-color: #0056b3;
 }
 </style>

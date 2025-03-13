@@ -1,7 +1,7 @@
 <template>
   <div class="prompt-container">
     <h1 class="title">
-      Consulta a ChatGPT sobre la tabla: {{ selectedTable.name }}
+      Consulta a ChatGPT sobre la tabla: {{ selectedTable }}
     </h1>
 
     <textarea
@@ -31,10 +31,10 @@
 
 <script setup>
 import { ref } from "vue";
+import { useRoute } from "vue-router";
 
-const props = defineProps({
-  selectedTable: Object, // Recibe la tabla seleccionada
-});
+const route = useRoute();
+const selectedTable = route.query.table;
 
 const userPrompt = ref("");
 const gptResponse = ref(null);
@@ -42,7 +42,7 @@ const loading = ref(false);
 const error = ref(null);
 
 const sendPrompt = async () => {
-  if (!props.selectedTable) return;
+  if (!selectedTable) return;
 
   loading.value = true;
   error.value = null;
@@ -54,7 +54,7 @@ const sendPrompt = async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: userPrompt.value,
-        table: props.selectedTable.name, // Enviar el nombre de la tabla al backend
+        table: selectedTable, // Enviar el nombre de la tabla al backend
       }),
     });
 
@@ -71,50 +71,52 @@ const sendPrompt = async () => {
 
 <style scoped>
 .prompt-container {
-  padding: 1.5rem;
-  max-width: 48rem;
-  margin-left: auto;
-  margin-right: auto;
+  padding: 20px;
 }
 
 .title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 1rem;
+  font-size: 24px;
+  margin-bottom: 20px;
 }
 
 .prompt-input {
   width: 100%;
-  height: 6rem;
-  padding: 0.75rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-  resize: none;
+  height: 100px;
+  padding: 10px;
+  font-size: 16px;
+  margin-bottom: 20px;
 }
 
 .send-button {
-  margin-top: 1rem;
-  padding: 0.5rem 1.5rem;
-  background-color: #3182ce;
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  background-color: #007bff;
   color: white;
-  border-radius: 0.5rem;
-  transition: background-color 0.2s;
+  transition: background-color 0.3s;
 }
 
 .send-button:disabled {
-  background-color: #a0aec0;
+  background-color: #ccc;
   cursor: not-allowed;
 }
 
+.send-button:not(:disabled):hover {
+  background-color: #0056b3;
+}
+
 .response-box {
-  margin-top: 1rem;
-  padding: 1rem;
-  background-color: #edf2f7;
-  border-radius: 0.5rem;
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: #f9f9f9;
 }
 
 .error-message {
-  color: #e53e3e;
-  margin-top: 1rem;
+  margin-top: 20px;
+  color: red;
 }
 </style>
