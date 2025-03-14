@@ -2,8 +2,8 @@ import axios from "axios";
 
 const instance=axios.create({
     // baseURL: '',
-    baseURL: 'http://127.0.0.1:8000/api/table_names',
-    withCredentials:true
+    baseURL: 'http://localhost:5000/api/chat',
+    withCredentials:false
 })
 
 export default instance;
