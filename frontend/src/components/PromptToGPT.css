@@ -1,0 +1,359 @@
+.appContainer {
+  display: flex;
+  height: 100vh;
+  font-family: ui-sans-serif, -apple-system, system-ui, Segoe UI, Helvetica,
+    Apple Color Emoji, Arial, sans-serif, Segoe UI Emoji, Segoe UI Symbol;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* Modo Oscuro (por defecto) */
+.appContainer {
+  color: white;
+}
+
+.appContainer.light-mode {
+  background-color: #ffffff;
+  color: #333;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+}
+
+li {
+  padding: 10px;
+  cursor: pointer;
+  border-bottom: none;
+}
+
+li:hover {
+  background: #333;
+  border-radius: 10px;
+}
+
+.appContainer.light-mode li:hover {
+  background: #ffeaea;
+  border-radius: 10px;
+}
+
+button {
+  background: #202123;
+  border: none;
+  padding: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-left: 10px;
+  color: white;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background: #565869;
+}
+
+.appContainer.light-mode button {
+  background: #4a4a4a;
+  color: white;
+}
+
+.appContainer.light-mode button:hover {
+  background: #666666;
+}
+
+.errorNotification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 0, 0, 0.8);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 14px;
+  z-index: 1000;
+  animation: fadeInOut 5s ease-in-out;
+}
+
+@keyframes fadeInOut {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+textarea {
+  flex-grow: 1;
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 16px;
+  padding: 10px;
+  outline: none;
+  resize: none;
+  height: auto;
+  min-height: 40px;
+  max-height: 200px;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  line-height: 1.5;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  transition: color 0.3s;
+}
+
+textarea::-webkit-scrollbar {
+  display: none;
+}
+
+.appContainer.light-mode textarea {
+  color: #333;
+}
+
+.userMessage {
+  align-self: flex-end;
+  background: #303030;
+  color: white;
+  padding: 20px;
+  border-radius: 15px;
+  max-width: 60%;
+  margin-bottom: 10px;
+}
+
+.botMessage {
+  align-self: flex-start;
+  background: transparent;
+  color: white;
+  padding: 10px;
+  border-radius: 10px;
+  max-width: 60%;
+  margin-bottom: 10px;
+}
+
+.appContainer.light-mode .userMessage {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.appContainer.light-mode .botMessage {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.sidebar {
+  width: 13%;
+  background: #171717;
+  color: white;
+  padding: 20px;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.appContainer.light-mode .sidebar {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.chatContainer {
+  width: 87%;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  background: #212121;
+  color: white;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2em;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.appContainer.light-mode .chatContainer {
+  background: #ffffff;
+  color: #333;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px;
+  height: 6%;
+  box-sizing: border-box;
+}
+
+.appContainer.light-mode .topBar {
+  background: #ffffff;
+}
+
+.messages {
+  flex-grow: 1;
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 1rem 25rem;
+  overflow-y: auto;
+  height: 82%;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.inputContainer {
+  border-radius: 20px;
+  display: flex;
+  width: 55%;
+  justify-content: center;
+  align-items: center;
+  background: #303030;
+  padding: 10px;
+  height: auto;
+  max-height: 250px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  transition: background-color 0.3s;
+}
+
+.appContainer.light-mode .inputContainer {
+  background: #e0e0e0;
+}
+
+.churnToggle {
+  background: transparent;
+  border: 1px solid rgb(69, 69, 69);
+  color: white;
+  padding: 0px 20px;
+  border-radius: 30px;
+  cursor: pointer;
+  text-align: center;
+  height: 100%;
+  transition: background-color 0.3s, color 0.3s, border 0.3s;
+}
+
+.churnToggle:hover {
+  background: #737373;
+}
+
+.appContainer.light-mode .churnToggle {
+  background: transparent;
+  border: 1px solid #666;
+  color: #333;
+}
+
+.appContainer.light-mode .churnToggle:hover {
+  background: #d0d0d0;
+}
+
+.messages::-webkit-scrollbar,
+.inputContainer::-webkit-scrollbar {
+  width: 3px;
+}
+
+.messages::-webkit-scrollbar-thumb,
+.inputContainer::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 10px;
+}
+
+.messages::-webkit-scrollbar-thumb:hover,
+.inputContainer::-webkit-scrollbar-thumb:hover {
+  background: #aaa;
+}
+
+.messages::-webkit-scrollbar-track,
+.inputContainer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebarHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.newChatButton {
+  background: #565869;
+  border: none;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.newChatButton:hover {
+  background: #737373;
+}
+
+.appContainer.light-mode .newChatButton {
+  background: #4a4a4a;
+  color: white;
+}
+
+.appContainer.light-mode .newChatButton:hover {
+  background: #666666;
+}
+
+.selectedChat {
+  background: #333;
+  border-radius: 10px;
+}
+
+.appContainer.light-mode .selectedChat {
+  background: #d0d0d0;
+  color: #000;
+}
+
+.modelSelector {
+  background: transparent;
+  cursor: pointer;
+  color: #c6c7d7;
+  padding: 10px;
+  margin-right: auto;
+  border: none;
+  font-weight: bold;
+  font-size: 18px;
+  outline: none;
+  transition: color 0.3s;
+}
+
+.appContainer.light-mode .modelSelector {
+  color: #333;
+}
+
+.chatOptions {
+  float: right;
+  cursor: pointer;
+  padding: 0 10px;
+}
+
+.chatOptions:hover {
+  color: red;
+}
+
+.deleteChat {
+  background: red;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-top: 5px;
+  text-align: center;
+}
+
+.modeToggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 5px;
+}
