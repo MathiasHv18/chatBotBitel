@@ -1,0 +1,22 @@
+INITMESSAGE - 2025-04-03 18:55:18.048516 - 2 - user: type some python code
+INITMESSAGE - 2025-04-03 18:55:18.048552 - 2 - assistant: Sure! Here’s a simple Python code snippet that demonstrates a basic concept: a function that checks whether a given number is prime or not.
+
+```python
+def is_prime(num):
+    """Check if a number is prime."""
+    if num <= 1:
+        return False
+    for i in range(2, int(num**0.5) + 1):
+        if num % i == 0:
+            return False
+    return True
+
+# Test the function
+number = 29
+if is_prime(number):
+    print(f"{number} is a prime number.")
+else:
+    print(f"{number} is not a prime number.")
+```
+
+You can run this code to check if the number 29 is prime. You can also change the value of the `number` variable to test other integers. Let me know if you need something more specific or different!

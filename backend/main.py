@@ -1,4 +1,8 @@
-from fastapi import FastAPI
+import cv2
+import base64
+import re
+from fastapi import FastAPI, UploadFile, File
+from collections import defaultdict
 import cx_Oracle
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,15 +10,16 @@ import pandas as pd
 import openai
 import os
 import re
+
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Client to communicate with CHATGPT
 clientGPT = openai.OpenAI(
-    api_key="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")
+    api_key="sla mama de JOSE ARTURO")
 # Client to communicate with Deepseek
 clientDeepSeek = openai.OpenAI(
-    api_key="sk-073e965772f745efa0cb76d61e8c7955", base_url="https://api.deepseek.com")
+    api_key="LA MAMA DE JOSE ARTURO", base_url="https://api.deepseek.com")
 
 
 lastID = 0
@@ -30,10 +35,11 @@ class Interaction(BaseModel):
 
 
 class QueryRequest(BaseModel):
-    prompt: str
+    isChurn: Optional[bool] = False
     modelUser: str
     username: str
-    isChurn: bool
+    prompt: str
+    images: Optional[List[str]] = None
 
 
 app.add_middleware(
@@ -44,13 +50,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Windows Mathias
+# cx_Oracle.init_oracle_client(lib_dir=r"C:\oracle\instantclient_23_7")
+
+# Linux Mathias
 cx_Oracle.init_oracle_client(
-    lib_dir=r"C:\oracle\instantclient_23_7")
+    lib_dir="/home/mathias/oracle/instantclient_19_26/")
+
+# Linux Server
+# cx_Oracle.init_oracle_client(lib_dir=r"/opt/oracle/instantclient_19_26")
 
 DB_CONFIG = {
-    "username": "training_ai",
-    "password": "Bitel*123",
-    "host": "181.176.39.55",  # local
+    "username": "ninhdt4",
+    "password": "Bitel@123$",
+    "host": "10.121.30.150",  # local
     # "host": "10.121.30.152", #prod
     "port": int("1521"),
     "service_name": "stage"
@@ -94,40 +107,79 @@ def get_table_data(conn, table_name):
         return pd.DataFrame()
 
 
+class Interaction:
+    def __init__(self, role, content):
+        self.role = role
+        self.content = content
+
+    def __repr__(self):
+        return f"Interaction(role='{self.role}', content='{self.content}')"
+
+
 def read_conversation_txt(username):
-    filename = f"conversations-{username}.txt"
+    conversations_dir = "conversations"
+    filename = os.path.join(conversations_dir, f"conversations-{username}.txt")
+
     if username not in conversations:
         conversations[username] = []
 
     try:
         with open(filename, "r", encoding="utf-8") as f:
             lines = f.readlines()
-            # <-- Agrega este print
-            print(f"Contenido del archivo {filename}: {lines}")
+            print(f"Contenido del archivo {filename}: {lines}")  # Debugging
+
+            current_role = None
+            current_content = []
+            valid_roles = {"user", "system", "assistant"}
 
             for line in lines:
                 line = line.strip()
-                if not line.startswith("INITMESSAGE - "):
+
+                # Si es una línea vacía, continúa agregando contenido al mensaje actual
+                if not line:
+                    if current_role and current_content:
+                        current_content.append("")
                     continue
 
-                line = line[len("INITMESSAGE - "):].strip()
-                parts = line.split(" - ", 3)
+                if line.startswith("INITMESSAGE - "):
+                    # Si hay un mensaje previo en construcción, agrégalo antes de procesar el nuevo
+                    if current_role and current_content:
+                        conversations[username].append(Interaction(
+                            role=current_role,
+                            content="\n".join(current_content)
+                        ))
 
-                if len(parts) >= 3:
-                    datetime, model_user, message = parts[:3]
-                    message_parts = message.split(": ", 1)
+                    # Reiniciar variables para el nuevo mensaje
+                    current_content = []
+                    current_role = None
 
-                    if len(message_parts) == 2:
-                        role, content = message_parts
-                        role = role.strip().lower()
-                        content = content.strip()
+                    # Extraer la parte después de "INITMESSAGE - "
+                    line = line[len("INITMESSAGE - "):].strip()
+                    parts = line.split(" - ", 3)
 
-                        valid_roles = {"user", "system", "assistant"}
-                        if role in valid_roles and content:
-                            conversations[username].append(Interaction(
-                                role=role,
-                                content=content
-                            ))
+                    if len(parts) >= 3:
+                        datetime_str, model_user, message = parts[:3]
+                        message_parts = message.split(": ", 1)
+
+                        if len(message_parts) == 2:
+                            role, content = message_parts
+                            role = role.strip().lower()
+                            content = content.strip()
+
+                            if role in valid_roles:
+                                current_role = role
+                                current_content.append(content)
+                else:
+                    # Si la línea no empieza con "INITMESSAGE - ", la agregamos al mensaje actual
+                    if current_role:
+                        current_content.append(line)
+
+            # Agregar el último mensaje acumulado si hay contenido pendiente
+            if current_role and current_content:
+                conversations[username].append(Interaction(
+                    role=current_role,
+                    content="\n".join(current_content)
+                ))
 
     except FileNotFoundError:
         print(f"No conversation history found for user: {username}")
@@ -141,11 +193,15 @@ def read_conversation_txt(username):
 
 
 def save_conversation_txt(username, modelUser):
+    conversations_dir = "conversations"
+    filename = os.path.join(conversations_dir, f"conversations-{username}.txt")
+
     try:
-        with open(f"conversations-{username}.txt", "w", encoding="utf-8") as f:
+        with open(filename, "w", encoding="utf-8") as f:
             for message in conversations[username]:
                 f.write(
-                    f"INITMESSAGE - {datetime.now()} - {modelUser} - {message.role}: {message.content}\n")
+                    f"INITMESSAGE - {datetime.now()} - {modelUser} - {message.role}: {message.content}\n"
+                )
         print(f"Saved conversation for user: {username}")
     except Exception as e:
         print(f"Error saving conversation for {username}: {str(e)}")
@@ -165,14 +221,16 @@ def summarizeData(df):
 async def clear_conversation(request: dict):
     try:
         username = request.get("username")
-        if username in conversations and conversations[username]:
-            conversations[username] = [conversations[username][0]]
-            archivo_conversacion = f"conversations-{username}.txt"
-            if os.path.exists(archivo_conversacion):
-                os.remove(archivo_conversacion)
+
+        conversations_dir = "conversations"
+        archivo_conversacion = os.path.join(
+            conversations_dir, f"conversations-{username}.txt")
+
+        if os.path.exists(archivo_conversacion):
+            os.remove(archivo_conversacion)
             return {"message": "Conversation history cleared"}
         else:
-            return {"error": "No conversation history found for this user"}
+            return {"error": f"No conversation history found for {username}"}
     except Exception as e:
         print(f"{e}")
 
@@ -283,79 +341,28 @@ def processInputModel(modelUser):
     return modelToUse, clientUser
 
 
-@app.post("/api/query_database")
-async def query_database(request: dict):
-
-    isChurn = request.get("isChurn")
-    modelUser = request.get("modelUser")
-    username = request.get("username")
-    prompt = request.get("prompt")
-    await getConversations(username)
-
-    modelToUse, userClient = processInputModel(modelUser)
-
-    if isChurn:
-        await send_data_to_ia(modelToUse, userClient, username)
-    try:
-
-        conversation = conversations[username]
-
-        # Add the user's question to the conversation history
-        conversation.append(
-            Interaction(
-                role="user",
-                content=prompt
-            )
-        )
-    except Exception as e:
-        return {"error": f"{str(e)}"}
+# Helper functions to validate image input
+def is_valid_base64(data):
+    # Eliminar el prefijo si lo tiene (ejemplo: "data:image/png;base64,")
+    match = re.match(r"^data:image/[^;]+;base64,", data)
+    if match:
+        data = data[len(match.group(0)):]  # Eliminar el prefijo
 
     try:
-        # To string messages so model can understand better
-        openai_messages = []
-        for msg in conversation:
-            openai_messages.append({
-                "role": msg.role,
-                "content": msg.content
-            })
+        # Intentar decodificar la imagen
+        base64.b64decode(data, validate=True)
+        return True
+    except Exception:
+        return False
 
-        save_conversation_txt(username, modelUser)
-        if isChurn:
-            # Get the response from OpenAI using the conversation history
-            response = userClient.chat.completions.create(
-                model=modelToUse,
-                messages=openai_messages,  # conversations[username]
-                temperature=0.1,  # Low value = more deterministic
-                top_p=0.95,  # High precision
-                presence_penalty=0.1,  # Low presence penalty
-                frequency_penalty=0.1,  # Avoid repetition
-                max_tokens=4096  # may need change
-            )
-        else:
-            response = userClient.chat.completions.create(
-                model=modelToUse,
-                messages=openai_messages,  # conversations[username]
-                max_tokens=400  # may need change
-            )
 
-        # Get response from output
-        assistant_message = response.choices[0].message.content.strip()
-        conversation.append(
-            Interaction(
-                role="assistant",
-                content=assistant_message
-            )
-        )
-        save_conversation_txt(username, modelUser)
-
-        print("Assistant response:", assistant_message)
-        return {"response": assistant_message}
-
-    except openai.RateLimitError:
-        return {"error": "OpenAI API rate limit exceeded. Please try again later."}
-
-    except Exception as e:
-        return {"error": f"Error calling OpenAI API: {str(e)}"}
+def is_valid_url(string):
+    try:
+        from urllib.parse import urlparse
+        result = urlparse(string)
+        return all([result.scheme, result.netloc])
+    except Exception:
+        return False
 
 
 @app.get("/api/test")
@@ -372,9 +379,13 @@ async def test():
 @app.get("/api/getAllChats")
 async def getChats():
     chat_ids = []
-    directory = "."
+    conversations_dir = "conversations"  # Directorio correcto
 
-    for filename in os.listdir(directory):
+    if not os.path.exists(conversations_dir):
+        # Si la carpeta no existe, devuelve lista vacía
+        return {"chat_ids": []}
+
+    for filename in os.listdir(conversations_dir):
         match = re.match(r"conversations-(\d+)\.txt", filename)
         if match:
             chat_ids.append(int(match.group(1)))
@@ -401,3 +412,126 @@ async def getChatUser(request: dict):
     print("ID USER",  id)
 
     return {"response": conversations[id]}
+
+
+@app.post("/api/query_database")
+async def query_database(request: dict):
+
+    modelUser = request.get("modelUser")
+    username = request.get("username")
+    isChurn = request.get("isChurn")
+    prompt = request.get("prompt")
+    images = request.get("images")
+
+    await getConversations(username)
+
+    modelToUse, userClient = processInputModel(modelUser)
+
+    if isChurn:
+        await send_data_to_ia(modelToUse, userClient, username)
+    try:
+        conversation = conversations[username]
+        # Add the user's question to the conversation history
+        conversation.append(
+            Interaction(
+                role="user",
+                content=prompt
+            )
+        )
+    except Exception as e:
+        return {"error": f"{str(e)}"}
+
+    try:
+        # To string messages so model can understand better
+        openai_messages = []
+        for msg in conversation:
+            openai_messages.append({
+                "role": msg.role,
+                "content": msg.content
+            })
+
+        if images:
+            for img in images:
+                # Ensure the image is a valid base64 string or URL
+                if is_valid_base64(img) or is_valid_url(img):
+                    openai_messages.append({
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_image",
+                                "image_url": f"data:image/jpeg;base64,{img}",
+                            },
+                        ],
+                    })
+                else:
+                    print(f"Invalid image format: {img}")
+                    return {"error": "Invalid image format"}
+
+        save_conversation_txt(username, modelUser)
+
+        assistant_message = await getChurnOutput(
+            userClient, modelToUse, openai_messages) if isChurn else await getBasicOutput(
+                userClient, modelToUse, openai_messages)
+
+        # Get response from output
+        conversation.append(
+            Interaction(
+                role="assistant",
+                content=assistant_message
+            )
+        )
+
+        save_conversation_txt(username, modelUser)
+
+        print("Assistant response:", assistant_message)
+        return {"response": assistant_message}
+
+    except openai.RateLimitError:
+        return {"error": "OpenAI API rate limit exceeded. Please try again later."}
+
+    except Exception as e:
+        return {"error": f"Error calling OpenAI API: {str(e)}"}
+
+
+@app.post("/api/generateImage")
+async def getImageOutput(request: dict):
+    promptUser = request.get("prompt")
+    image_quality = request.get("image_quality", "standard")
+    modelToUse = request.get("modelToUse", "dall-e-3")
+
+    response = clientGPT.images.generate(
+        model=modelToUse,
+        prompt=promptUser,
+        size="1024x1024",
+        quality=image_quality,
+        n=1,
+    )
+
+    image_url = response.data[0].url
+    print(image_url)
+
+    return {"response": image_url}
+
+
+async def getChurnOutput(userClient, modelToUse, openai_messages):
+    response = userClient.chat.completions.create(
+        model=modelToUse,
+        messages=openai_messages,  # conversations[username]
+        temperature=0.1,  # Low value = more deterministic
+        top_p=0.95,  # High precision
+        presence_penalty=0.1,  # Low presence penalty
+        frequency_penalty=0.1,  # Avoid repetition
+        max_tokens=4096  # may need change
+    )
+    assistant_message = response.choices[0].message.content.strip()
+    return assistant_message
+
+
+async def getBasicOutput(userClient, modelToUse, openai_messages):
+    response = userClient.chat.completions.create(
+        model=modelToUse,
+        messages=openai_messages,  # conversations[username]
+        max_tokens=400  # may need change
+    )
+    assistant_message = response.choices[0].message.content.strip()
+    return assistant_message

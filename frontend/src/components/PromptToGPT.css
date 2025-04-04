@@ -1,8 +1,13 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+body {
+  font-family: "Inter", sans-serif;
+}
+
 .appContainer {
   display: flex;
   height: 100vh;
-  font-family: ui-sans-serif, -apple-system, system-ui, Segoe UI, Helvetica,
-    Apple Color Emoji, Arial, sans-serif, Segoe UI Emoji, Segoe UI Symbol;
+
   transition: background-color 0.3s, color 0.3s;
 }
 
@@ -102,14 +107,15 @@ textarea {
   height: auto;
   min-height: 40px;
   max-height: 200px;
-  overflow-y: hidden;
+  overflow-y: hidden; /* Key change: back to hidden */
   box-sizing: border-box;
   line-height: 1.5;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
   transition: color 0.3s;
 }
 
+/* Hide scrollbar for Chrome, Safari and Opera */
 textarea::-webkit-scrollbar {
   display: none;
 }
@@ -124,7 +130,7 @@ textarea::-webkit-scrollbar {
   color: white;
   padding: 20px;
   border-radius: 15px;
-  max-width: 60%;
+  max-width: 80%;
   margin-bottom: 10px;
 }
 
@@ -134,7 +140,7 @@ textarea::-webkit-scrollbar {
   color: white;
   padding: 10px;
   border-radius: 10px;
-  max-width: 60%;
+  max-width: 90%;
   margin-bottom: 10px;
 }
 
@@ -153,7 +159,9 @@ textarea::-webkit-scrollbar {
   background: #171717;
   color: white;
   padding: 20px;
+  max-height: 100%;
   transition: background-color 0.3s, color 0.3s;
+  overflow-y: auto;
 }
 
 .appContainer.light-mode .sidebar {
@@ -200,17 +208,16 @@ textarea::-webkit-scrollbar {
   flex-direction: column;
   align-items: flex-start;
   width: 100%;
-  padding: 1rem 25rem;
+  padding: 1rem 20rem;
   overflow-y: auto;
   height: 82%;
   box-sizing: border-box;
   position: relative;
 }
-
 .inputContainer {
   border-radius: 20px;
   display: flex;
-  width: 55%;
+  width: 60%;
   justify-content: center;
   align-items: center;
   background: #303030;
@@ -218,7 +225,6 @@ textarea::-webkit-scrollbar {
   height: auto;
   max-height: 250px;
   box-sizing: border-box;
-  overflow-y: auto;
   transition: background-color 0.3s;
 }
 
@@ -235,6 +241,12 @@ textarea::-webkit-scrollbar {
   cursor: pointer;
   text-align: center;
   height: 100%;
+  width: 180px;
+  min-width: 180px;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background-color 0.3s, color 0.3s, border 0.3s;
 }
 
@@ -253,23 +265,27 @@ textarea::-webkit-scrollbar {
 }
 
 .messages::-webkit-scrollbar,
-.inputContainer::-webkit-scrollbar {
+.inputContainer::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar {
   width: 3px;
 }
 
 .messages::-webkit-scrollbar-thumb,
-.inputContainer::-webkit-scrollbar-thumb {
+.inputContainer::-webkit-scrollbar-thumb,
+.sidebar::-webkit-scrollbar-thumb {
   background: #888;
   border-radius: 10px;
 }
 
 .messages::-webkit-scrollbar-thumb:hover,
-.inputContainer::-webkit-scrollbar-thumb:hover {
+.inputContainer::-webkit-scrollbar-thumb:hover,
+.sidebar::-webkit-scrollbar-thumb:hover {
   background: #aaa;
 }
 
 .messages::-webkit-scrollbar-track,
-.inputContainer::-webkit-scrollbar-track {
+.inputContainer::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -314,20 +330,50 @@ textarea::-webkit-scrollbar {
 }
 
 .modelSelector {
-  background: transparent;
-  cursor: pointer;
+  background: #2a2a2a;
+  border: 2px solid #565869;
   color: #c6c7d7;
-  padding: 10px;
-  margin-right: auto;
-  border: none;
+  padding: 10px 15px;
+  border-radius: 8px;
+  font-size: 16px;
   font-weight: bold;
-  font-size: 18px;
   outline: none;
-  transition: color 0.3s;
+  cursor: pointer;
+  transition: all 0.3s ease-in-out;
+  appearance: none; /* Oculta el diseño nativo */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  position: relative;
+  width: 140px; /* Ajusta según necesites */
 }
 
 .appContainer.light-mode .modelSelector {
+  background: #f0f0f0;
   color: #333;
+  border: 2px solid #ccc;
+}
+
+.modelSelector:hover {
+  background: #3a3a3a;
+}
+
+.appContainer.light-mode .modelSelector:hover {
+  background: #e0e0e0;
+}
+
+.modelSelector:focus {
+  border-color: #737373;
+}
+
+.modelSelector option {
+  background: #2a2a2a;
+  color: white;
+  padding: 10px;
+}
+
+.appContainer.light-mode .modelSelector option {
+  background: white;
+  color: black;
 }
 
 .chatOptions {
@@ -356,4 +402,287 @@ textarea::-webkit-scrollbar {
   cursor: pointer;
   font-size: 16px;
   padding: 5px;
+}
+@media screen and (max-width: 1200px) {
+  .sidebar {
+    opacity: 0;
+    transform: translateX(-100%);
+    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+    position: absolute;
+  }
+
+  .chatContainer {
+    width: 100%;
+    transition: width 0.3s ease-in-out;
+  }
+
+  .messages {
+    flex-grow: 1;
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    padding: 1rem 10rem;
+    overflow-y: auto;
+    height: 82%;
+    box-sizing: border-box;
+    position: relative;
+  }
+}
+
+.imagePreviewContainer {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.imagePreview {
+  position: relative;
+  width: 100px;
+  height: 100px;
+}
+
+.previewImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 5px;
+}
+
+.imagePreview button {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: red;
+  border: none;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+input[type="file"] {
+  display: none;
+}
+
+.file-upload-container {
+  position: relative;
+  display: inline-block;
+}
+
+.custom-file-upload {
+  display: inline-block;
+  padding: 10px;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  color: white;
+  transition: transform 0.2s;
+}
+
+.custom-file-upload svg {
+  width: 24px;
+  height: 24px;
+  fill: white;
+}
+
+.custom-file-upload:hover {
+  transform: scale(1.1);
+}
+
+/* Estilos para modo claro */
+.appContainer.light-mode .custom-file-upload {
+  color: #333;
+}
+
+.appContainer.light-mode .custom-file-upload svg {
+  fill: #ffffff;
+}
+
+.code-block {
+  background-color: #282c34;
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0;
+  overflow-x: auto; /* Asegura el scroll horizontal si el código es largo */
+  font-family: "SFMono-Regular", "Menlo", "Monaco", "Consolas",
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #abb2bf; /* Color de texto similar a los bloques de código de ChatGPT */
+  white-space: pre-wrap; /* Permite que el código se ajuste */
+}
+
+/* Opcional: Añadir sombra sutil */
+.code-block {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: #3c4049;
+  color: #e3e3e3;
+  font-size: 0.875rem;
+}
+
+.code-language {
+  text-transform: lowercase;
+  font-weight: 600;
+}
+
+.copy-button {
+  background-color: transparent;
+  border: 1px solid #ffffff55;
+  color: #e3e3e3;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.2s;
+}
+
+.copy-button:hover {
+  background-color: #ffffff22;
+}
+
+.copy-button.copied {
+  background-color: #4caf50;
+  border-color: #4caf50;
+  color: white;
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  background-color: #282c34;
+  color: #e3e3e3;
+}
+
+.code-block code {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* Tema oscuro */
+.dark-mode .code-block {
+  background-color: #1e1e1e;
+}
+
+.dark-mode .code-header {
+  background-color: #2d2d2d;
+}
+
+/* Tema claro */
+.light-mode .code-block {
+  background-color: #f5f5f5;
+}
+
+.light-mode .code-header {
+  background-color: #e0e0e0;
+  color: #333;
+}
+
+.light-mode .copy-button {
+  border-color: #33333355;
+  color: #333;
+}
+
+.light-mode .copy-button:hover {
+  background-color: #33333322;
+}
+
+.light-mode .code-block pre {
+  background-color: #f5f5f5;
+  color: #333;
+}
+
+/* Añade esto a tu archivo PromptToGPT.css */
+.message-image-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+.message-image {
+  width: 100px;
+  height: 100px;
+  border-radius: 8px;
+  object-fit: cover;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.message-image:hover {
+  transform: scale(1.05);
+}
+
+/* Para dispositivos móviles, hacerlas aún más pequeñas */
+@media screen and (max-width: 768px) {
+  .message-image {
+    width: 80px;
+    height: 80px;
+  }
+}
+
+/* Animación de typing dots */
+.typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 15px;
+  background: #444;
+  border-radius: 20px;
+}
+
+.typing-indicator span {
+  height: 8px;
+  width: 8px;
+  margin: 0 2px;
+  background-color: #9e9ea1;
+  display: block;
+  border-radius: 50%;
+  opacity: 0.4;
+}
+
+.typing-indicator span:nth-child(1) {
+  animation: typing 1.5s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation: typing 1.5s infinite ease-in-out 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation: typing 1.5s infinite ease-in-out 0.4s;
+}
+
+@keyframes typing {
+  0% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+}
+
+/* Versión para modo claro */
+.appContainer.light-mode .typing-indicator {
+  background: #e0e0e0;
+}
+
+.appContainer.light-mode .typing-indicator span {
+  background-color: #666;
 }
