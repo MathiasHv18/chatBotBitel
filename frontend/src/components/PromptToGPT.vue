@@ -1,6 +1,7 @@
 <template>
   <div :class="['appContainer', isDarkMode ? 'dark-mode' : 'light-mode']">
-    <div class="sidebar">
+    <!-- Barra lateral con clases dinámicas -->
+    <div :class="['sidebar', { 'sidebar-closed': !isSidebarOpen }]">
       <div class="sidebarHeader">
         <h2>Chat History</h2>
         <button class="newChatButton" @click="chooseModel(2)">
@@ -9,7 +10,7 @@
       </div>
       <ul>
         <li
-          v-for="chat in chatHistory"
+          v-for="chat in [...chatHistory].reverse()"
           :key="chat"
           @click="getUserChat(chat)"
           :class="{ selectedChat: chat === selectedChatId }"
@@ -34,14 +35,23 @@
         </li>
       </ul>
     </div>
-    <div class="chatContainer">
+
+    <div :class="['chatContainer', { 'chat-expanded': !isSidebarOpen }]">
       <div class="topBar">
+        <button
+          class="sidebar-toggle"
+          @click="toggleSidebar"
+          :class="{ 'sidebar-toggle-closed': !isSidebarOpen }"
+        >
+          {{ isSidebarOpen ? "◀" : "▶" }}
+        </button>
+
         <button @click="toggleDarkMode" class="modeToggle">
           {{ isDarkMode ? "🌙 Dark Mode" : "☀️ Light Mode" }}
         </button>
         <select
           v-model="modelUsing"
-          @change="chooseModel(modelUsing)"
+          @change="handleModel"
           class="modelSelector"
         >
           <option :value="1">DeepSeek</option>
@@ -56,7 +66,10 @@
         <div
           v-for="(msg, index) in messages"
           :key="index"
-          :class="{ userMessage: msg.isUser, botMessage: !msg.isUser }"
+          :class="{
+            userMessage: msg.isUser,
+            botMessage: !msg.isUser,
+          }"
         >
           <span v-if="msg.isUser" v-html="formatMessageText(msg.text)"></span>
           <span
@@ -65,58 +78,109 @@
           ></span>
         </div>
       </div>
-      <div v-if="selectedImages.length" class="imagePreviewContainer">
-        <div
-          v-for="(image, index) in selectedImages"
-          :key="index"
-          class="imagePreview"
-        >
-          <img :src="image" alt="Preview" class="previewImage" />
-          <button @click="removeImage(index)">✖</button>
-        </div>
-      </div>
       <div class="inputContainer">
-        <textarea
-          v-model="userPrompt"
-          placeholder="Ask anything"
-          ref="textareaRef"
-          @input="adjustTextareaHeight"
-          @keydown.enter.exact.prevent="sendPrompt"
-          @keydown.enter.shift.prevent="newLine"
-        ></textarea>
-
-        <div class="file-upload-container">
-          <input
-            type="file"
-            ref="fileInput"
-            @change="handleImageUpload"
-            accept="image/*"
-            multiple
-          />
-          <button
-            type="button"
-            class="custom-file-upload"
-            @click="$refs.fileInput.click()"
+        <!-- Vista previa de imágenes (altura fija) -->
+        <div v-if="selectedImages.length" class="imagePreviewContainer">
+          <div
+            v-for="(image, index) in selectedImages"
+            :key="index"
+            class="imagePreview"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-              <path
-                d="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2m8 3a4 4 0 0 0-4 4a4 4 0 0 0 4 4a4 4 0 0 0 4-4a4 4 0 0 0-4-4m0 2a2 2 0 0 1 2 2a2 2 0 0 1-2 2a2 2 0 0 1-2-2a2 2 0 0 1 2-2Z"
-              />
-            </svg>
-          </button>
+            <img :src="image.base64" alt="Preview" class="previewImage" />
+            <button @click="removeImage(index)">✖</button>
+          </div>
         </div>
-        <button @click="sendPrompt">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="white">
-            <path d="M2,21L23,12L2,3V10L17,12L2,14V21Z"></path>
-          </svg>
-        </button>
+        <div v-if="selectedFiles.length" class="filePreviewContainer">
+          <div
+            v-for="(file, index) in selectedFiles"
+            :key="index"
+            class="filePreview"
+          >
+            <div class="filePreviewIcon">
+              {{ getFileIcon(file.name) }}
+            </div>
+            <div class="filePreviewName">{{ file.name }}</div>
+            <button @click="removeFile(index)">✖</button>
+          </div>
+        </div>
+
+        <!-- Área de texto (altura ajustable) -->
+        <div class="userPromptContainer">
+          <textarea
+            v-model="userPrompt"
+            placeholder="Ask anything"
+            ref="textareaRef"
+            @input="adjustTextareaHeight"
+            @keydown.enter.exact.prevent="sendPrompt"
+            @keydown.enter.shift.prevent="newLine"
+          ></textarea>
+        </div>
+
+        <!-- Botones (altura fija) -->
+        <div class="userInputFile">
+          <button
+            class="toggleGeneration"
+            :class="{ active: isImageGeneration }"
+            @click="handleImageGeneration"
+          >
+            Generate image
+          </button>
+          <div class="file-upload-container">
+            <input
+              type="file"
+              ref="fileInput"
+              @change="handleImageUpload"
+              accept="image/*"
+              multiple
+            />
+            <button
+              type="button"
+              class="custom-file-upload"
+              @click="$refs.fileInput.click()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path
+                  d="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2m8 3a4 4 0 0 0-4 4a4 4 0 0 0 4 4a4 4 0 0 0 4-4a4 4 0 0 0-4-4m0 2a2 2 0 0 1 2 2a2 2 0 0 1-2 2a2 2 0 0 1-2-2a2 2 0 0 1 2-2Z"
+                />
+              </svg>
+            </button>
+            <!--Files-->
+            <input
+              type="file"
+              ref="fileInput"
+              @change="handleFileUpload"
+              accept=".pdf,.xls,.xlsx,.csv,.doc,.docx,.txt"
+              multiple
+            />
+            <button
+              type="button"
+              class="custom-file-upload"
+              @click="$refs.fileInput.click()"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                class="clip-icon"
+                style="width: 24px; height: 24px"
+              >
+                <path
+                  d="M21.586 10.461l-10.05 10.05c-1.95 1.95-5.123 1.95-7.071 0-1.95-1.95-1.95-5.122 0-7.072l9.344-9.344c1.17-1.17 3.073-1.17 4.242 0 1.172 1.17 1.172 3.072 0 4.242l-8.637 8.637c-.39.39-1.023.39-1.414 0-.39-.39-.39-1.023 0-1.414l7.072-7.072"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  stroke="currentColor"
+                  fill="none"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
-    <template>
-      <div class="errorNotification" v-if="errorMessage">
-        {{ errorMessage }}
-      </div>
-    </template>
+    <div class="errorNotification" v-if="errorMessage">
+      {{ errorMessage }}
+    </div>
   </div>
 </template>
 
@@ -128,7 +192,9 @@ import "./PromptToGPT.css";
 
 const messagesContainer = ref(null);
 const selectedImages = ref([]);
+const selectedFiles = ref([]);
 const errorMessage = ref("");
+
 const username = ref(null);
 const modelUsing = ref(2);
 const userPrompt = ref("");
@@ -142,11 +208,43 @@ const textareaRef = ref(null);
 const selectedChatId = ref(null);
 const hoveredChat = ref(null);
 const deleteOption = ref(null);
+const isImageGeneration = ref(false);
+const isSidebarOpen = ref(true);
 
+//office pc
+//const api = "http://192.168.137.1:8000";
 //prod :(
-//const api = "http://10.121.30.150:8000";
+const api = "http://10.121.30.150:8000";
 //home office :)
-const api = "http://127.0.0.1:8000";
+//const api = "http://127.0.0.1:8000";
+
+const getFileIcon = (filename) => {
+  const extension = filename.split(".").pop().toLowerCase();
+
+  const iconMap = {
+    pdf: "📄",
+    doc: "📝",
+    docx: "📝",
+    xls: "📊",
+    xlsx: "📊",
+    csv: "📊",
+    txt: "📝",
+    // Add more mappings as needed
+  };
+
+  return iconMap[extension] || "📁";
+};
+const removeFile = (index) => {
+  selectedFiles.value.splice(index, 1);
+};
+
+const toggleSidebar = () => {
+  isSidebarOpen.value = !isSidebarOpen.value;
+};
+
+const handleImageGeneration = () => {
+  isImageGeneration.value = !isImageGeneration.value;
+};
 
 onMounted(async () => {
   await chooseModel(2);
@@ -154,47 +252,157 @@ onMounted(async () => {
   document.addEventListener("paste", handlePaste);
 });
 
-onUnmounted(() => {
-  document.removeEventListener("paste", handlePaste);
-});
+const formatMessageText = (msg) => {
+  if (!msg) return "";
 
-const formatMessageText = (text) => {
-  if (!text) return "";
-
-  if (typeof text === "object" && text.images && text.text) {
-    const images = text.images;
-    const messageText = text.text;
-
+  if (
+    msg.images &&
+    msg.images.length > 0 &&
+    msg.files &&
+    msg.files.length > 0
+  ) {
     const imagesHtml = `
       <div class="message-image-container">
-        ${images
-          .map(
-            (image) =>
-              `<img src="${image}" alt="Message Image" class="message-image"/>`
-          )
+        ${msg.images
+          .map((image) => {
+            const imageSource = image.base64 || image.url;
+            return imageSource
+              ? `<img src="${imageSource}" alt="Message Image" class="message-image"/>`
+              : "";
+          })
           .join("")}
       </div>
     `;
 
-    return `${imagesHtml}${formatMessage(messageText)}`;
+    const filesHtml = `
+      <div class="message-file-container">
+        ${msg.files
+          .map((file) => {
+            const fileName = file.name || "File";
+            const fileSize = formatFileSize(file.size);
+            const fileIcon = getFileIcon(fileName);
+
+            return `
+              <div class="message-file">
+                <div class="message-file-icon">${fileIcon}</div>
+                <div class="message-file-name">${fileName}</div>
+                ${
+                  fileSize
+                    ? `<div class="message-file-size">${fileSize}</div>`
+                    : ""
+                }
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+
+    // Texto asociado con los archivos
+    const textPart = msg.text && msg.text.trim() ? formatMessage(msg.text) : "";
+    return `${imagesHtml}${filesHtml}${textPart}`;
   }
 
-  return formatMessage(text);
+  // Para mensajes con imágenes
+  if (msg.images && msg.images.length > 0) {
+    const imagesHtml = `
+      <div class="message-image-container">
+        ${msg.images
+          .map((image) => {
+            const imageSource = image.base64 || image.url;
+            return imageSource
+              ? `<img src="${imageSource}" alt="Message Image" class="message-image"/>`
+              : "";
+          })
+          .join("")}
+      </div>
+    `;
+
+    // Texto asociado con las imágenes
+    const textPart = msg.text && msg.text.trim() ? formatMessage(msg.text) : "";
+    return `${imagesHtml}${textPart}`;
+  }
+
+  // Para mensajes con archivos
+  if (msg.files && msg.files.length > 0) {
+    const filesHtml = `
+      <div class="message-file-container">
+        ${msg.files
+          .map((file) => {
+            const fileName = file.name || "File";
+            const fileSize = formatFileSize(file.size);
+            const fileIcon = getFileIcon(fileName);
+
+            return `
+              <div class="message-file">
+                <div class="message-file-icon">${fileIcon}</div>
+                <div class="message-file-name">${fileName}</div>
+                ${
+                  fileSize
+                    ? `<div class="message-file-size">${fileSize}</div>`
+                    : ""
+                }
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+
+    // Texto asociado con los archivos
+    const textPart = msg.text && msg.text.trim() ? formatMessage(msg.text) : "";
+    return `${filesHtml}${textPart}`;
+  }
+
+  // Para mensajes solo de texto (estructura original que funciona)
+  return formatMessage(msg.text || msg);
 };
-// Function to handle images pasted with Ctrl + V
+
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return "0 Bytes";
+
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
 const handlePaste = (event) => {
   const items = event.clipboardData.items;
   for (const item of items) {
     if (item.type.startsWith("image/")) {
       const file = item.getAsFile();
       const reader = new FileReader();
-      reader.onload = (e) => {
-        selectedImages.value.push(e.target.result); // Save the image in Base64
+
+      // Generar un nombre único con la extensión correcta basada en el tipo MIME
+      const fileType = file.type.split("/")[1]; // Obtener 'png', 'jpeg', etc.
+      const timestamp = new Date().getTime();
+      const uniqueFilename = `pasted-image-${timestamp}.${fileType}`;
+
+      reader.onload = () => {
+        selectedImages.value.push({
+          filename: uniqueFilename,
+          base64: reader.result,
+        });
+        nextTick(() => {
+          adjustTextareaHeight();
+        });
       };
       reader.readAsDataURL(file);
     }
   }
 };
+
+watch(
+  selectedImages,
+  () => {
+    nextTick(() => {
+      adjustTextareaHeight();
+    });
+  },
+  { deep: true }
+);
 
 watch(userPrompt, () => {
   nextTick(() => {
@@ -214,7 +422,6 @@ const showDeleteOption = (chat) => {
 };
 
 const cleanHistory = async (chat) => {
-  console.log(chat);
   await fetch(`${api}/api/clear_conversation`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -228,28 +435,24 @@ const showError = (message) => {
   errorMessage.value = message;
   setTimeout(() => {
     errorMessage.value = "";
-  }, 3000); // Disappears in 3 seconds
+  }, 3000);
 };
 
 const adjustTextareaHeight = () => {
-  if (!textareaRef.value) return;
   const textarea = textareaRef.value;
-  const inputContainer = textarea.closest(".inputContainer");
+  if (!textarea) return;
 
   textarea.style.height = "auto";
 
-  const maxHeight = 200;
+  const scrollHeight = textarea.scrollHeight;
 
-  if (textarea.scrollHeight > maxHeight) {
-    textarea.style.height = `${maxHeight}px`;
-    textarea.style.overflowY = "auto";
-    inputContainer.style.overflowY = "auto";
-  } else {
-    textarea.style.height = `${textarea.scrollHeight}px`;
-    textarea.style.overflowY = "hidden";
-    inputContainer.style.overflowY = "hidden";
-  }
+  const maxHeight = 150;
+
+  textarea.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+
+  textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
 };
+
 const newLine = (event) => {
   event.preventDefault();
   userPrompt.value += "\n";
@@ -270,10 +473,37 @@ const getUserChat = async (chat) => {
     }
 
     const data = await response.json();
-    messages.value = data.response.map((msg) => ({
-      text: msg.content,
-      isUser: msg.role === "user",
-    }));
+    messages.value = data.response.map((msg) => {
+      // Detectar si el contenido tiene una imagen en base64
+      const base64Match = msg.content.match(
+        /data:image\/[a-zA-Z]+;base64,[^"'\s]+/
+      );
+      // Detectar si el contenido tiene una URL de imagen
+      const urlMatch = msg.content.match(/'url':\s*'([^']+)'/);
+
+      if (base64Match || urlMatch) {
+        // Si encontramos una imagen (base64 o URL)
+        return {
+          isUser: msg.role === "user",
+          text: {
+            // Para mensajes con URL, no incluimos el texto original
+            text: urlMatch ? "" : msg.content,
+            images: [
+              {
+                base64: base64Match ? base64Match[0] : null,
+                url: urlMatch ? urlMatch[1] : null,
+              },
+            ],
+          },
+        };
+      } else {
+        // Es un mensaje de texto normal
+        return {
+          text: msg.content,
+          isUser: msg.role === "user",
+        };
+      }
+    });
 
     await nextTick(() => {
       if (messagesContainer.value) {
@@ -285,6 +515,7 @@ const getUserChat = async (chat) => {
     console.error("Error getting chats:", error);
   }
 };
+
 const toggleChurn = () => {
   isChurn.value = !isChurn.value;
 };
@@ -314,8 +545,6 @@ const chooseModel = async (model) => {
     }),
   });
 
-  await new Promise((resolve) => setTimeout(resolve, 500));
-
   await getChats();
 
   if (chatHistory.value.length > 0) {
@@ -338,6 +567,17 @@ const getChats = async () => {
   }
 };
 
+const handleFileUpload = (event) => {
+  const files = event.target.files;
+  if (!files.length) return;
+  Array.from(files).forEach((file) => {
+    selectedFiles.value.push(file);
+  });
+
+  console.log(selectedFiles.value);
+  event.target.value = "";
+};
+
 const handleImageUpload = (event) => {
   const files = event.target.files;
   if (!files.length) return;
@@ -346,44 +586,45 @@ const handleImageUpload = (event) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
-      selectedImages.value.push(reader.result);
+      selectedImages.value.push({
+        filename: file.name,
+        base64: reader.result,
+      });
+      nextTick(() => {
+        adjustTextareaHeight();
+      });
     };
   });
 
   event.target.value = "";
 };
 
-// Función para formatear el texto y detectar bloques de código
 const formatMessage = (text) => {
   if (!text) return "";
 
-  // Regex para detectar bloques de código con triple backtick
   const codeBlockRegex = /```([a-zA-Z]*)\n([\s\S]*?)```/g;
 
-  // Reemplazar los bloques de código con divs formateados
   const formattedText = text.replace(
     codeBlockRegex,
     (match, language, code) => {
       return `<div class="code-block">
-              <div class="code-header">
-                <span class="code-language">${language || "code"}</span>
-                <button class="copy-button" onclick="copyToClipboard(this)">Copy</button>
-              </div>
-              <pre><code class="${language || ""}">${escapeHtml(
+            <div class="code-header">
+              <span class="code-language">${language || "code"}</span>
+              <button class="copy-button" onclick="copyToClipboard(this)">Copy</button>
+            </div>
+            <pre><code class="${language || ""}">${escapeHtml(
         code
       )}</code></pre>
-            </div>`;
+          </div>`;
     }
   );
 
-  // Manejo de formato markdown básico (negritas, cursivas, etc.)
   return formattedText
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.*?)\*/g, "<em>$1</em>")
     .replace(/\n/g, "<br>");
 };
 
-// Función para escapar HTML y evitar problemas de seguridad
 const escapeHtml = (unsafe) => {
   return unsafe
     .replace(/&/g, "&amp;")
@@ -393,18 +634,14 @@ const escapeHtml = (unsafe) => {
     .replace(/'/g, "&#039;");
 };
 
-// Reemplaza la función copyToClipboard en el script
 window.copyToClipboard = (button) => {
   const codeBlock = button.closest(".code-block").querySelector("code");
   const text = codeBlock.textContent;
 
-  // Método alternativo para compatibilidad con HTTP
   const fallbackCopyTextToClipboard = (text) => {
-    // Crear un elemento temporal
     const textArea = document.createElement("textarea");
     textArea.value = text;
 
-    // Hacerlo invisible pero mantenerlo en el DOM
     textArea.style.position = "fixed";
     textArea.style.top = "0";
     textArea.style.left = "0";
@@ -432,7 +669,6 @@ window.copyToClipboard = (button) => {
     document.body.removeChild(textArea);
   };
 
-  // Intentar primero con la API Clipboard moderna
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard
       .writeText(text)
@@ -440,18 +676,15 @@ window.copyToClipboard = (button) => {
         updateButtonState(button);
       })
       .catch(() => {
-        // Si falla, usar el método alternativo
         fallbackCopyTextToClipboard(text);
         updateButtonState(button);
       });
   } else {
-    // Para HTTP y navegadores antiguos
     fallbackCopyTextToClipboard(text);
     updateButtonState(button);
   }
 };
 
-// Función separada para actualizar el estado del botón
 const updateButtonState = (button) => {
   const originalText = button.textContent;
   button.textContent = "Copied!";
@@ -464,27 +697,48 @@ const updateButtonState = (button) => {
 };
 
 const sendPrompt = async () => {
-  if (!userPrompt.value && selectedImages.value.length === 0) return;
+  if (
+    !userPrompt.value &&
+    selectedImages.value.length === 0 &&
+    selectedFiles.value.length === 0
+  )
+    return;
+
+  //Get images if not empty
+  const imagesToSend =
+    selectedImages.value.length > 0 ? [...selectedImages.value] : [];
+  //Get files if not empty
+  const filesToSend =
+    selectedFiles.value.length > 0 ? [...selectedFiles.value] : [];
+
+  const formData = new FormData();
+
+  formData.append("modelUser", modelUsing.value);
+  formData.append("username", String(selectedChatId.value));
+  formData.append("isChurn", isChurn.value);
+  formData.append("images", JSON.stringify(imagesToSend));
+  filesToSend.forEach((file, i) => formData.append("files", file));
+
   const promptText = userPrompt.value;
+  formData.append("prompt", promptText);
   userPrompt.value = "";
 
   if (textareaRef.value) {
     adjustTextareaHeight();
   }
 
-  const imagesToSend =
-    selectedImages.value.length > 0 ? [...selectedImages.value] : [];
+  messages.value.push({
+    text: {
+      text: promptText,
+      images: imagesToSend,
+      files: filesToSend,
+    },
+    isUser: true,
+  });
 
-  // Structure user message with images if present
-  const userMessage =
-    imagesToSend.length > 0
-      ? { text: promptText, images: imagesToSend }
-      : promptText;
+  selectedImages.value = [];
+  selectedFiles.value = [];
 
-  messages.value.push({ text: userMessage, isUser: true });
-  selectedImages.value = []; // Clear images after pushing to message
-
-  // Usar el indicador de typing en HTML en lugar de texto plano
   const typingMessage = {
     text: '<div class="typing-indicator"><span></span><span></span><span></span></div>',
     isUser: false,
@@ -493,7 +747,6 @@ const sendPrompt = async () => {
   messages.value.push(typingMessage);
   loading.value = true;
 
-  // El resto de la función se mantiene igual...
   await nextTick(() => {
     if (messagesContainer.value) {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
@@ -501,19 +754,19 @@ const sendPrompt = async () => {
   });
 
   try {
-    const response = await fetch(`${api}/api/query_database`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt: promptText,
-        modelUser: modelUsing.value,
-        username: String(selectedChatId.value),
-        isChurn: isChurn.value,
-        images: imagesToSend,
-      }),
-    });
+    let response = null;
+    let data = null;
 
-    const data = await response.json();
+    if (isImageGeneration.value) {
+      response = await generateImg(promptText);
+    } else {
+      response = await fetch(`${api}/api/query_database`, {
+        method: "POST",
+        body: formData,
+      });
+    }
+
+    data = await response.json();
 
     messages.value.pop();
 
@@ -534,10 +787,31 @@ const sendPrompt = async () => {
 
       showError(errorMessage);
     } else {
-      messages.value.push({ text: data.response, isUser: false });
-    }
+      if (isImageGeneration.value) {
+        const imageUrl = data.response.imageUrl || data.response;
+        const messageText = data.response.text || "Generated image:";
 
-    console.log(data);
+        const imageHtml = `
+                <div>
+                  <p>${messageText}</p>
+                  <div class="message-image-container">
+                    <img src="${imageUrl}" alt="Generated Image" class="message-image"/>
+                    <a href="${imageUrl}" download="generated-image.png" class="download-button">
+                      Descargar imagen
+                    </a>
+                  </div>
+                </div>
+              `;
+
+        messages.value.push({
+          text: imageHtml,
+          isUser: false,
+        });
+      } else {
+        console.log(data.response);
+        messages.value.push({ text: data.response, isUser: false });
+      }
+    }
   } catch (err) {
     console.error("Error:", err);
     messages.value.pop();
@@ -557,19 +831,27 @@ const sendPrompt = async () => {
   }
 };
 
-const generateImg = async () => {
+const generateImg = async (prompt) => {
   try {
     const response = await fetch(`${api}/api/generateImage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        prompt: "generate an image of a cocodrile",
+        prompt,
       }),
     });
 
     return response;
   } catch (error) {
     console.error("Error generating image:", error);
+  }
+};
+
+const handleModel = () => {
+  if (modelUsing.value === 1) {
+    modelUsing.value === 2;
+  } else {
+    modelUsing.value === 1;
   }
 };
 </script>

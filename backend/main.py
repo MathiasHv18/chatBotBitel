@@ -1,7 +1,10 @@
-import cv2
+import json
+from fastapi import FastAPI
+from PyPDF2 import PdfReader
+from fastapi.staticfiles import StaticFiles
 import base64
 import re
-from fastapi import FastAPI, UploadFile, File
+from fastapi import Form, File, UploadFile
 from collections import defaultdict
 import cx_Oracle
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,36 +13,44 @@ import pandas as pd
 import openai
 import os
 import re
-
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+import httpx
+
+
+app = FastAPI()
+# Access folder images with url
+app.mount("/images", StaticFiles(directory="images"), name="images")
+
+proxies = {
+    "http://": "http://10.121.127.204:3128",
+    "https://": "http://10.121.127.204:3128"
+}
+
+http_client = httpx.Client(proxies=proxies)
+
 
 # Client to communicate with CHATGPT
 clientGPT = openai.OpenAI(
-    api_key="sla mama de JOSE ARTURO")
+    api_key="",
+    http_client=http_client
+)
 # Client to communicate with Deepseek
 clientDeepSeek = openai.OpenAI(
-    api_key="LA MAMA DE JOSE ARTURO", base_url="https://api.deepseek.com")
+    api_key="", base_url="https://api.deepseek.com")
 
 
-lastID = 0
-
+lastID = -1
 conversations = {}
 
-app = FastAPI()
 
+class Interaction:
+    def __init__(self, role, content):
+        self.role = role
+        self.content = content
 
-class Interaction(BaseModel):
-    role: str
-    content: str
-
-
-class QueryRequest(BaseModel):
-    isChurn: Optional[bool] = False
-    modelUser: str
-    username: str
-    prompt: str
-    images: Optional[List[str]] = None
+    def __repr__(self):
+        return f"Interaction(role='{self.role}', content='{self.content}')"
 
 
 app.add_middleware(
@@ -54,11 +65,16 @@ app.add_middleware(
 # cx_Oracle.init_oracle_client(lib_dir=r"C:\oracle\instantclient_23_7")
 
 # Linux Mathias
-cx_Oracle.init_oracle_client(
-    lib_dir="/home/mathias/oracle/instantclient_19_26/")
+# cx_Oracle.init_oracle_client(  lib_dir="/home/mathias/oracle/instantclient_19_26/")
 
 # Linux Server
 # cx_Oracle.init_oracle_client(lib_dir=r"/opt/oracle/instantclient_19_26")
+
+try:
+    cx_Oracle.init_oracle_client(lib_dir=r"C:\oracle\instantclient_23_7")
+    print("Oracle Client initialized successfully!")
+except cx_Oracle.DatabaseError as e:
+    print(f"Error initializing Oracle Client: {e}")
 
 DB_CONFIG = {
     "username": "ninhdt4",
@@ -107,27 +123,15 @@ def get_table_data(conn, table_name):
         return pd.DataFrame()
 
 
-class Interaction:
-    def __init__(self, role, content):
-        self.role = role
-        self.content = content
-
-    def __repr__(self):
-        return f"Interaction(role='{self.role}', content='{self.content}')"
-
-
 def read_conversation_txt(username):
     conversations_dir = "conversations"
     filename = os.path.join(conversations_dir, f"conversations-{username}.txt")
 
-    if username not in conversations:
-        conversations[username] = []
+    conversations[username] = []
 
     try:
         with open(filename, "r", encoding="utf-8") as f:
             lines = f.readlines()
-            print(f"Contenido del archivo {filename}: {lines}")  # Debugging
-
             current_role = None
             current_content = []
             valid_roles = {"user", "system", "assistant"}
@@ -146,7 +150,7 @@ def read_conversation_txt(username):
                     if current_role and current_content:
                         conversations[username].append(Interaction(
                             role=current_role,
-                            content="\n".join(current_content)
+                            content="\n".join(current_content),
                         ))
 
                     # Reiniciar variables para el nuevo mensaje
@@ -178,7 +182,7 @@ def read_conversation_txt(username):
             if current_role and current_content:
                 conversations[username].append(Interaction(
                     role=current_role,
-                    content="\n".join(current_content)
+                    content="\n".join(current_content),
                 ))
 
     except FileNotFoundError:
@@ -187,8 +191,6 @@ def read_conversation_txt(username):
     except Exception as e:
         print(f"Error reading conversation history for {username}: {str(e)}")
 
-    print(
-        f"Conversaciones cargadas para {username}: {conversations[username]}")
     return conversations[username]
 
 
@@ -205,16 +207,6 @@ def save_conversation_txt(username, modelUser):
         print(f"Saved conversation for user: {username}")
     except Exception as e:
         print(f"Error saving conversation for {username}: {str(e)}")
-
-
-def summarizeData(df):
-    summary = {
-        "columns": list(df.columns),
-        "num_rows": len(df),
-        "preview": df.head(5).to_dict(orient="records"),
-        "description": df.describe().to_dict()
-    }
-    return summary
 
 
 @app.post("/api/clear_conversation")
@@ -275,8 +267,6 @@ async def send_data_to_ia(modelUser, clientUser, username):
         return {"error": f"Error sending data: {str(e)}"}
 
     finally:
-        # if conn:
-        # conn.close()
         print("Database connection closed")
 
 
@@ -320,7 +310,7 @@ This GPT acts as a data analyst specialized in churn prediction analysis for tel
 * It provides churn predictions based on historical data trends.
 * It avoids discussing technical errors, focusing on user-friendly analysis.
 
-Users can directly request specific dataset insights, merging, or predictive churn analysis.""",
+Users can directly request specific dataset insights, merging, or predictive churn analysis."""
             )
         ]
         print(f"Creating new conversation")
@@ -332,7 +322,7 @@ Users can directly request specific dataset insights, merging, or predictive chu
 def processInputModel(modelUser):
     modelToUse = ''
     if modelUser == 2:
-        modelToUse = 'gpt-4o-mini'
+        modelToUse = 'gpt-4o'
         clientUser = clientGPT
     else:
         modelToUse = 'deepseek-chat'
@@ -341,34 +331,10 @@ def processInputModel(modelUser):
     return modelToUse, clientUser
 
 
-# Helper functions to validate image input
-def is_valid_base64(data):
-    # Eliminar el prefijo si lo tiene (ejemplo: "data:image/png;base64,")
-    match = re.match(r"^data:image/[^;]+;base64,", data)
-    if match:
-        data = data[len(match.group(0)):]  # Eliminar el prefijo
-
-    try:
-        # Intentar decodificar la imagen
-        base64.b64decode(data, validate=True)
-        return True
-    except Exception:
-        return False
-
-
-def is_valid_url(string):
-    try:
-        from urllib.parse import urlparse
-        result = urlparse(string)
-        return all([result.scheme, result.netloc])
-    except Exception:
-        return False
-
-
 @app.get("/api/test")
 async def test():
-    response = clientGPT.chat.completions.create(
-        model="gpt-4o-mini",
+    response = clientDeepSeek.chat.completions.create(
+        model="deepseek-chat",
         messages=[{"role": "user", "content": "Im testing my frontend to see if I can format your messages. Please send me bold messagges and tables with data and all kind of messages to help me debug"}],
         max_tokens=100
     )
@@ -409,35 +375,101 @@ async def getChatUser(request: dict):
     id = request.get("username")
     conversations[id] = []
     read_conversation_txt(id)
-    print("ID USER",  id)
 
     return {"response": conversations[id]}
 
 
+@app.get('/api/getImages')
+async def getImagesTest():
+    img_url = f'http://181.176.39.56:8000/static/crocodile.jpg'
+    return {'response': img_url}
+
+
+def storeImage(nameImg, base64Img):
+
+    try:
+        # Get fileType
+        firstSplit, secondSplit = base64Img.split("/", 1)
+        fileType, rest = secondSplit.split(";", 1)
+
+        # Get only encoded base64
+        header, encoded = base64Img.split(",", 1)
+
+        image_data = base64.b64decode(encoded)
+        save_path = os.path.join("images", f'{nameImg}')
+
+        with open(save_path, "wb") as f:
+            f.write(image_data)
+
+        return fileType
+    except Exception as e:
+        return {"response": e}
+
+
 @app.post("/api/query_database")
-async def query_database(request: dict):
+async def query_database(modelUser: int = Form(...),
+                         username: str = Form(...),
+                         isChurn: bool = Form(...),
+                         prompt: str = Form(...),
+                         images: str = Form(...),
+                         files: List[UploadFile] = File(default=[])
+                         ):
+    print(f"modelUser (type: {type(modelUser)}): {modelUser}")
+    print(f"username (type: {type(username)}): {username}")
+    print(f"isChurn (type: {type(isChurn)}): {isChurn}")
+    print(f"prompt (type: {type(prompt)}): {prompt}")
+    print(f"files (type: {type(files)}): {files}")
 
-    modelUser = request.get("modelUser")
-    username = request.get("username")
-    isChurn = request.get("isChurn")
-    prompt = request.get("prompt")
-    images = request.get("images")
-
+    images = json.loads(images)
     await getConversations(username)
 
-    modelToUse, userClient = processInputModel(modelUser)
+    modelToUse, userClient = processInputModel(int(modelUser))
 
     if isChurn:
         await send_data_to_ia(modelToUse, userClient, username)
     try:
         conversation = conversations[username]
+
         # Add the user's question to the conversation history
         conversation.append(
             Interaction(
                 role="user",
-                content=prompt
+                content=prompt,
             )
         )
+
+        if files:
+            for file in files:
+                pdfText = await readPdf(file)
+                conversation.append(
+                    Interaction(
+                        role="user",
+                        content=pdfText,
+                    )
+                )
+
+        for img in images:
+            filename = img["filename"]
+            base64_data = img["base64"]
+
+            filetype = storeImage(filename, base64_data)
+            print(filetype)
+
+            img_url = f'http://181.176.39.56/static/{filename}'
+            conversation.append(
+                Interaction(
+                    role="user",
+                    content=[
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": img_url
+                            }
+                        }
+                    ]
+                )
+            )
+
     except Exception as e:
         return {"error": f"{str(e)}"}
 
@@ -450,25 +482,12 @@ async def query_database(request: dict):
                 "content": msg.content
             })
 
-        if images:
-            for img in images:
-                # Ensure the image is a valid base64 string or URL
-                if is_valid_base64(img) or is_valid_url(img):
-                    openai_messages.append({
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_image",
-                                "image_url": f"data:image/jpeg;base64,{img}",
-                            },
-                        ],
-                    })
-                else:
-                    print(f"Invalid image format: {img}")
-                    return {"error": "Invalid image format"}
-
         save_conversation_txt(username, modelUser)
 
+        print(f"files (type: {type(files)}): {openai_messages}")
+        print(f"User Client: {userClient}, Model to Use: {modelToUse}")
+
+        # Bot response
         assistant_message = await getChurnOutput(
             userClient, modelToUse, openai_messages) if isChurn else await getBasicOutput(
                 userClient, modelToUse, openai_messages)
@@ -482,12 +501,9 @@ async def query_database(request: dict):
         )
 
         save_conversation_txt(username, modelUser)
-
+        print(f"files (type: {type(files)}): {files}")
         print("Assistant response:", assistant_message)
         return {"response": assistant_message}
-
-    except openai.RateLimitError:
-        return {"error": "OpenAI API rate limit exceeded. Please try again later."}
 
     except Exception as e:
         return {"error": f"Error calling OpenAI API: {str(e)}"}
@@ -531,7 +547,20 @@ async def getBasicOutput(userClient, modelToUse, openai_messages):
     response = userClient.chat.completions.create(
         model=modelToUse,
         messages=openai_messages,  # conversations[username]
-        max_tokens=400  # may need change
+        max_tokens=800  # may need change
+
     )
     assistant_message = response.choices[0].message.content.strip()
     return assistant_message
+
+
+async def readPdf(pdf: UploadFile):
+    text = ''
+    try:
+        reader = PdfReader(pdf.file)
+        for page in reader.pages:
+            text += page.extract_text()
+    except Exception as e:
+        return {"response": e}
+
+    return text
