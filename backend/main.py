@@ -1,3 +1,7 @@
+import shutil
+from uuid import uuid4
+import asyncio
+from fastapi.responses import StreamingResponse
 import json
 from fastapi import FastAPI
 from PyPDF2 import PdfReader
@@ -21,19 +25,13 @@ import httpx
 app = FastAPI()
 # Access folder images with url
 app.mount("/images", StaticFiles(directory="images"), name="images")
+app.mount("/files", StaticFiles(directory="files"), name="files")
 
-proxies = {
-    "http://": "http://10.121.127.204:3128",
-    "https://": "http://10.121.127.204:3128"
-}
-
-http_client = httpx.Client(proxies=proxies)
 
 
 # Client to communicate with CHATGPT
 clientGPT = openai.OpenAI(
-    api_key="",
-    http_client=http_client
+    api_key=""
 )
 # Client to communicate with Deepseek
 clientDeepSeek = openai.OpenAI(
@@ -42,6 +40,19 @@ clientDeepSeek = openai.OpenAI(
 
 lastID = -1
 conversations = {}
+CODE_EXTENSIONS = {
+    "py", "js", "jsx", "ts", "tsx", "java", "kt", "kts", "go", "rb", "php", "cs",
+    "cpp", "cxx", "cc", "c", "h", "hpp", "hh", "rs", "swift", "scala", "pl", "pm",
+    "sh", "bash", "zsh", "bat", "cmd",
+    "html", "htm", "css", "scss", "sass", "less", "vue", "xml",
+    "json", "yaml", "yml", "toml", "ini", "env",
+    "md", "rst", "org", "adoc", "asciidoc",
+    "lua", "dart", "r", "jl", "m", "matlab", "groovy", "clj", "cljs", "lisp", "el", "ex", "exs", "coffee", "jinja", "sql", "ps1",
+    "gradle", "makefile", "mk", "cmake", "Dockerfile", "gitignore", "gitattributes", "gitmodules",
+    "ejs", "hbs", "mustache", "pug", "twig",
+
+    "vb", "vbs", "asm", "s", "ada", "fs", "fsi", "fsx", "fsscript", "erl", "hrl", "pro", "pas", "d", "nim", "ml", "mli"
+}
 
 
 class Interaction:
@@ -68,13 +79,8 @@ app.add_middleware(
 # cx_Oracle.init_oracle_client(  lib_dir="/home/mathias/oracle/instantclient_19_26/")
 
 # Linux Server
-# cx_Oracle.init_oracle_client(lib_dir=r"/opt/oracle/instantclient_19_26")
+cx_Oracle.init_oracle_client(lib_dir=r"/opt/oracle/instantclient_19_26")
 
-try:
-    cx_Oracle.init_oracle_client(lib_dir=r"C:\oracle\instantclient_23_7")
-    print("Oracle Client initialized successfully!")
-except cx_Oracle.DatabaseError as e:
-    print(f"Error initializing Oracle Client: {e}")
 
 DB_CONFIG = {
     "username": "ninhdt4",
@@ -276,12 +282,8 @@ async def initializeChat(request: dict):
     username = request.get("username")
     isChurn = request.get("isChurn")
     modelToUse, userClient = processInputModel(modelUser)
-    print(f"Model to use: {modelToUse}")
     await getConversations(username)
-    if isChurn:
-        return await send_data_to_ia(modelToUse, userClient, username)
-    else:
-        return {"response": "No churn choosen"}
+    return {"response": "User created"}
 
 
 @app.get("/api/getUserConversations")
@@ -313,7 +315,6 @@ This GPT acts as a data analyst specialized in churn prediction analysis for tel
 Users can directly request specific dataset insights, merging, or predictive churn analysis."""
             )
         ]
-        print(f"Creating new conversation")
         save_conversation_txt(username, "null")
 
     return conversations[username]
@@ -322,24 +323,13 @@ Users can directly request specific dataset insights, merging, or predictive chu
 def processInputModel(modelUser):
     modelToUse = ''
     if modelUser == 2:
-        modelToUse = 'gpt-4o'
+        modelToUse = 'gpt-4.1'
         clientUser = clientGPT
     else:
         modelToUse = 'deepseek-chat'
         clientUser = clientDeepSeek
 
     return modelToUse, clientUser
-
-
-@app.get("/api/test")
-async def test():
-    response = clientDeepSeek.chat.completions.create(
-        model="deepseek-chat",
-        messages=[{"role": "user", "content": "Im testing my frontend to see if I can format your messages. Please send me bold messagges and tables with data and all kind of messages to help me debug"}],
-        max_tokens=100
-    )
-    print(response)
-    return {"response": response.choices[0].message.content}
 
 
 @app.get("/api/getAllChats")
@@ -379,12 +369,6 @@ async def getChatUser(request: dict):
     return {"response": conversations[id]}
 
 
-@app.get('/api/getImages')
-async def getImagesTest():
-    img_url = f'http://181.176.39.56:8000/static/crocodile.jpg'
-    return {'response': img_url}
-
-
 def storeImage(nameImg, base64Img):
 
     try:
@@ -414,68 +398,56 @@ async def query_database(modelUser: int = Form(...),
                          images: str = Form(...),
                          files: List[UploadFile] = File(default=[])
                          ):
-    print(f"modelUser (type: {type(modelUser)}): {modelUser}")
-    print(f"username (type: {type(username)}): {username}")
-    print(f"isChurn (type: {type(isChurn)}): {isChurn}")
-    print(f"prompt (type: {type(prompt)}): {prompt}")
-    print(f"files (type: {type(files)}): {files}")
-
-    images = json.loads(images)
+    pdfText = None
+    textCode = None
     await getConversations(username)
-
+    conversation = conversations[username]
     modelToUse, userClient = processInputModel(int(modelUser))
 
     if isChurn:
         await send_data_to_ia(modelToUse, userClient, username)
-    try:
-        conversation = conversations[username]
 
-        # Add the user's question to the conversation history
-        conversation.append(
-            Interaction(
-                role="user",
-                content=prompt,
-            )
+    filenames = await storeFiles(files)
+    if filenames:
+        pdfText = await readPdf(files)
+        textCode = await readCode(filenames)
+
+    await storeImages(images, conversation)
+
+    conversation.append(
+        Interaction(
+            role="user",
+            content=prompt,
         )
+    )
 
-        if files:
-            for file in files:
-                pdfText = await readPdf(file)
-                conversation.append(
-                    Interaction(
-                        role="user",
-                        content=pdfText,
-                    )
-                )
-
-        for img in images:
-            filename = img["filename"]
-            base64_data = img["base64"]
-
-            filetype = storeImage(filename, base64_data)
-            print(filetype)
-
-            img_url = f'http://181.176.39.56/static/{filename}'
+    try:
+        openai_messages = []
+        if filenames:
+            filenames_str = ", ".join(filenames)
             conversation.append(
                 Interaction(
                     role="user",
-                    content=[
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": img_url
-                            }
-                        }
-                    ]
+                    content=f"I have uploaded the following files: {filenames_str}"
                 )
             )
 
-    except Exception as e:
-        return {"error": f"{str(e)}"}
+        if pdfText:
+            conversation.append(
+                Interaction(
+                    role="user",
+                    content=f"Here is the extracted content from the PDFs:\n{pdfText}"
+                )
+            )
 
-    try:
-        # To string messages so model can understand better
-        openai_messages = []
+        if textCode:
+            conversation.append(
+                Interaction(
+                    role="user",
+                    content=f"Here is the extracted content from the code files:\n{textCode}"
+                )
+            )
+
         for msg in conversation:
             openai_messages.append({
                 "role": msg.role,
@@ -484,26 +456,36 @@ async def query_database(modelUser: int = Form(...),
 
         save_conversation_txt(username, modelUser)
 
-        print(f"files (type: {type(files)}): {openai_messages}")
-        print(f"User Client: {userClient}, Model to Use: {modelToUse}")
-
         # Bot response
-        assistant_message = await getChurnOutput(
-            userClient, modelToUse, openai_messages) if isChurn else await getBasicOutput(
-                userClient, modelToUse, openai_messages)
+        # assistant_message = await getChurnOutput(
+        #    userClient, modelToUse, openai_messages) if isChurn else await getBasicOutput(
+        #        userClient, modelToUse, openai_messages)
 
-        # Get response from output
-        conversation.append(
-            Interaction(
-                role="assistant",
-                content=assistant_message
+        async def event_generator():
+            assistant_message = ''
+            response = userClient.chat.completions.create(
+                model=modelToUse,
+                messages=openai_messages,
+                max_tokens=800,
+                stream=True)
+
+            for chunk in response:
+                delta = chunk.choices[0].delta
+                if delta.content is not None:
+                    assistant_message = assistant_message + delta.content
+                    yield delta.content
+                    await asyncio.sleep(0)
+
+            conversation.append(
+                Interaction(
+                    role="assistant",
+                    content=assistant_message
+                )
             )
-        )
 
-        save_conversation_txt(username, modelUser)
-        print(f"files (type: {type(files)}): {files}")
-        print("Assistant response:", assistant_message)
-        return {"response": assistant_message}
+            save_conversation_txt(username, modelUser)
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     except Exception as e:
         return {"error": f"Error calling OpenAI API: {str(e)}"}
@@ -514,6 +496,16 @@ async def getImageOutput(request: dict):
     promptUser = request.get("prompt")
     image_quality = request.get("image_quality", "standard")
     modelToUse = request.get("modelToUse", "dall-e-3")
+    username = request.get("username")
+    await getConversations(username)
+    conversation = conversations[username]
+    conversation.append(
+        Interaction(
+            role="user",
+            content=promptUser,
+        )
+    )
+    save_conversation_txt(username, modelToUse)
 
     response = clientGPT.images.generate(
         model=modelToUse,
@@ -524,7 +516,13 @@ async def getImageOutput(request: dict):
     )
 
     image_url = response.data[0].url
-    print(image_url)
+    conversation.append(
+        Interaction(
+            role="assistant",
+            content=image_url,
+        )
+    )
+    save_conversation_txt(username, modelToUse)
 
     return {"response": image_url}
 
@@ -554,13 +552,72 @@ async def getBasicOutput(userClient, modelToUse, openai_messages):
     return assistant_message
 
 
-async def readPdf(pdf: UploadFile):
+async def readPdf(pdfFile: UploadFile):
     text = ''
     try:
-        reader = PdfReader(pdf.file)
-        for page in reader.pages:
-            text += page.extract_text()
+        if pdfFile:
+            for pdf in pdfFile:
+                if pdf.filename.lower().endswith('.pdf'):
+                    reader = PdfReader(pdf.file)
+                    for page in reader.pages:
+                        text += page.extract_text()
+            return text
     except Exception as e:
         return {"response": e}
 
-    return text
+    return None
+
+
+async def storeFiles(files):
+    filenames = []
+
+    if files:
+        for file in files:
+            filename = f"{uuid4()}_{file.filename}"
+            filenames.append(filename)
+            save_path = os.path.join("files", f'{filename}')
+
+            with open(save_path, "wb") as f:
+                content = await file.read()
+                f.write(content)
+
+            file.file.seek(0)
+        return filenames
+    return False
+
+
+async def storeImages(images, conversation):
+    images = json.loads(images)
+    for img in images:
+        filename = img["filename"]
+        base64_data = img["base64"]
+
+        filetype = storeImage(filename, base64_data)
+
+        img_url = f'http://181.176.39.56/static/{filename}'
+        conversation.append(
+            Interaction(
+                role="user",
+                content=[
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": img_url
+                        }
+                    }
+                ]
+            )
+        )
+
+
+async def readCode(filenames):
+    textCode = ''
+    for filename in filenames:
+        filepath = os.path.join("files", f'{filename}')
+        extension = filename.split(".")[-1].lower()
+        if extension in CODE_EXTENSIONS:
+            with open(filepath, "r", encoding="utf-8") as f:
+                textCode += f.read()
+    if textCode == '':
+        return None
+    return f"```{textCode}\n```"
