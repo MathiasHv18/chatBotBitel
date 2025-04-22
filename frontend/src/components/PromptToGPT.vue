@@ -4,7 +4,7 @@
     <div :class="['sidebar', { 'sidebar-closed': !isSidebarOpen }]">
       <div class="sidebarHeader">
         <h2>Chat History</h2>
-        <button class="newChatButton" @click="chooseModel(2)">
+        <button class="newChatButton" @click="createConversation(2)">
           + New Chat
         </button>
       </div>
@@ -128,7 +128,7 @@
           <div class="file-upload-container">
             <input
               type="file"
-              ref="fileInput"
+              ref="imageInput"
               @change="handleImageUpload"
               accept="image/*"
               multiple
@@ -136,7 +136,7 @@
             <button
               type="button"
               class="custom-file-upload"
-              @click="$refs.fileInput.click()"
+              @click="$refs.imageInput.click()"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                 <path
@@ -185,10 +185,45 @@
 </template>
 
 <script setup>
+const MAX_IMAGE_SIZE_MB = 1;
+const MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024;
 import { ref, nextTick, onMounted, onUnmounted } from "vue";
 import { watch } from "vue";
-
 import "./PromptToGPT.css";
+
+import "highlight.js/styles/atom-one-dark.css"; // Another popular theme
+import hljs from "highlight.js/lib/core";
+import css from "highlight.js/lib/languages/css";
+import javascript from "highlight.js/lib/languages/javascript";
+import python from "highlight.js/lib/languages/python";
+import java from "highlight.js/lib/languages/java";
+import csharp from "highlight.js/lib/languages/csharp";
+import php from "highlight.js/lib/languages/php";
+import ruby from "highlight.js/lib/languages/ruby";
+import go from "highlight.js/lib/languages/go";
+import kotlin from "highlight.js/lib/languages/kotlin";
+import swift from "highlight.js/lib/languages/swift";
+import typescript from "highlight.js/lib/languages/typescript";
+import html from "highlight.js/lib/languages/xml"; // XML is used for HTML
+import json from "highlight.js/lib/languages/json";
+import bash from "highlight.js/lib/languages/bash";
+import sql from "highlight.js/lib/languages/sql";
+import { marked } from "marked";
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("java", java);
+hljs.registerLanguage("csharp", csharp);
+hljs.registerLanguage("php", php);
+hljs.registerLanguage("ruby", ruby);
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("kotlin", kotlin);
+hljs.registerLanguage("swift", swift);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("html", html);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("bash", bash);
 
 const messagesContainer = ref(null);
 const selectedImages = ref([]);
@@ -212,187 +247,17 @@ const isImageGeneration = ref(false);
 const isSidebarOpen = ref(true);
 
 //office pc
-//const api = "http://192.168.137.1:8000";
+const api = "http://10.121.124.133:8000";
 //prod :(
-const api = "http://10.121.30.150:8000";
+//const api = "http://10.121.30.150:8000";
 //home office :)
 //const api = "http://127.0.0.1:8000";
 
-const getFileIcon = (filename) => {
-  const extension = filename.split(".").pop().toLowerCase();
-
-  const iconMap = {
-    pdf: "📄",
-    doc: "📝",
-    docx: "📝",
-    xls: "📊",
-    xlsx: "📊",
-    csv: "📊",
-    txt: "📝",
-    // Add more mappings as needed
-  };
-
-  return iconMap[extension] || "📁";
-};
-const removeFile = (index) => {
-  selectedFiles.value.splice(index, 1);
-};
-
-const toggleSidebar = () => {
-  isSidebarOpen.value = !isSidebarOpen.value;
-};
-
-const handleImageGeneration = () => {
-  isImageGeneration.value = !isImageGeneration.value;
-};
-
 onMounted(async () => {
-  await chooseModel(2);
   await getChats();
   document.addEventListener("paste", handlePaste);
+  applyCodeHighlighting();
 });
-
-const formatMessageText = (msg) => {
-  if (!msg) return "";
-
-  if (
-    msg.images &&
-    msg.images.length > 0 &&
-    msg.files &&
-    msg.files.length > 0
-  ) {
-    const imagesHtml = `
-      <div class="message-image-container">
-        ${msg.images
-          .map((image) => {
-            const imageSource = image.base64 || image.url;
-            return imageSource
-              ? `<img src="${imageSource}" alt="Message Image" class="message-image"/>`
-              : "";
-          })
-          .join("")}
-      </div>
-    `;
-
-    const filesHtml = `
-      <div class="message-file-container">
-        ${msg.files
-          .map((file) => {
-            const fileName = file.name || "File";
-            const fileSize = formatFileSize(file.size);
-            const fileIcon = getFileIcon(fileName);
-
-            return `
-              <div class="message-file">
-                <div class="message-file-icon">${fileIcon}</div>
-                <div class="message-file-name">${fileName}</div>
-                ${
-                  fileSize
-                    ? `<div class="message-file-size">${fileSize}</div>`
-                    : ""
-                }
-              </div>
-            `;
-          })
-          .join("")}
-      </div>
-    `;
-
-    // Texto asociado con los archivos
-    const textPart = msg.text && msg.text.trim() ? formatMessage(msg.text) : "";
-    return `${imagesHtml}${filesHtml}${textPart}`;
-  }
-
-  // Para mensajes con imágenes
-  if (msg.images && msg.images.length > 0) {
-    const imagesHtml = `
-      <div class="message-image-container">
-        ${msg.images
-          .map((image) => {
-            const imageSource = image.base64 || image.url;
-            return imageSource
-              ? `<img src="${imageSource}" alt="Message Image" class="message-image"/>`
-              : "";
-          })
-          .join("")}
-      </div>
-    `;
-
-    // Texto asociado con las imágenes
-    const textPart = msg.text && msg.text.trim() ? formatMessage(msg.text) : "";
-    return `${imagesHtml}${textPart}`;
-  }
-
-  // Para mensajes con archivos
-  if (msg.files && msg.files.length > 0) {
-    const filesHtml = `
-      <div class="message-file-container">
-        ${msg.files
-          .map((file) => {
-            const fileName = file.name || "File";
-            const fileSize = formatFileSize(file.size);
-            const fileIcon = getFileIcon(fileName);
-
-            return `
-              <div class="message-file">
-                <div class="message-file-icon">${fileIcon}</div>
-                <div class="message-file-name">${fileName}</div>
-                ${
-                  fileSize
-                    ? `<div class="message-file-size">${fileSize}</div>`
-                    : ""
-                }
-              </div>
-            `;
-          })
-          .join("")}
-      </div>
-    `;
-
-    // Texto asociado con los archivos
-    const textPart = msg.text && msg.text.trim() ? formatMessage(msg.text) : "";
-    return `${filesHtml}${textPart}`;
-  }
-
-  // Para mensajes solo de texto (estructura original que funciona)
-  return formatMessage(msg.text || msg);
-};
-
-const formatFileSize = (bytes) => {
-  if (bytes === 0) return "0 Bytes";
-
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-};
-
-const handlePaste = (event) => {
-  const items = event.clipboardData.items;
-  for (const item of items) {
-    if (item.type.startsWith("image/")) {
-      const file = item.getAsFile();
-      const reader = new FileReader();
-
-      // Generar un nombre único con la extensión correcta basada en el tipo MIME
-      const fileType = file.type.split("/")[1]; // Obtener 'png', 'jpeg', etc.
-      const timestamp = new Date().getTime();
-      const uniqueFilename = `pasted-image-${timestamp}.${fileType}`;
-
-      reader.onload = () => {
-        selectedImages.value.push({
-          filename: uniqueFilename,
-          base64: reader.result,
-        });
-        nextTick(() => {
-          adjustTextareaHeight();
-        });
-      };
-      reader.readAsDataURL(file);
-    }
-  }
-};
 
 watch(
   selectedImages,
@@ -410,15 +275,147 @@ watch(userPrompt, () => {
   });
 });
 
-const removeImage = (index) => {
-  selectedImages.value.splice(index, 1);
+watch(messages, () => {
+  nextTick(() => {
+    setTimeout(() => {
+      applyCodeHighlighting();
+    }, 50);
+  });
+});
+
+const applyCodeHighlighting = () => {
+  const codeBlocks = document.querySelectorAll("pre code");
+  codeBlocks.forEach((block) => {
+    hljs.highlightElement(block);
+  });
 };
 
-const toggleDarkMode = () => {
-  isDarkMode.value = !isDarkMode.value;
+const getFileIcon = (filename) => {
+  const extension = filename.split(".").pop().toLowerCase();
+
+  const iconMap = {
+    pdf: "📄",
+    doc: "📝",
+    docx: "📝",
+    xls: "📊",
+    xlsx: "📊",
+    csv: "📊",
+    txt: "📝",
+  };
+
+  return iconMap[extension] || "📁";
 };
-const showDeleteOption = (chat) => {
-  deleteOption.value = deleteOption.value === chat ? null : chat;
+
+const getFilesContainer = (msg) => {
+  return `
+    <div class="message-file-container">
+      ${msg.files
+        .map((file) => {
+          const fileName = file.name || "File";
+          const fileIcon = getFileIcon(fileName);
+          return `
+            <div class="message-file">
+              <div class="message-file-icon">${fileIcon}</div>
+              <div class="message-file-name">${fileName}</div>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+};
+
+const getImageContainer = (msg) => {
+  return `
+    <div class="message-image-container">
+      ${msg.images
+        .map((image) => {
+          const imageSource = image.base64 || image.url;
+          return imageSource
+            ? `<img src="${imageSource}" alt="Message Image" class="message-image"/>`
+            : "";
+        })
+        .join("")}
+    </div>
+  `;
+};
+
+const escapeHtml = (unsafe) => {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
+const formatCodeBlock = (text) => {
+  if (!text) return "";
+
+  const codeBlockRegex = /```(\w*)\n([\s\S]*?)\n```(?!\w)/g;
+  // /^(\w+)?\n([\s\S]*?)^```$/gm;
+  const formattedText = text.replace(
+    codeBlockRegex,
+    (match, language, code) => {
+      return `<div class="code-block">
+            <div class="code-header">
+              <span class="code-language">${language || "code"}</span>
+              <button class="copy-button" onclick="copyToClipboard(this)">Copy</button>
+            </div>
+            <pre><code class="${language || ""}">${code}</code></pre>
+          </div>`;
+    }
+  );
+  return formattedText;
+};
+
+const formatMessageText = (msg) => {
+  if (!msg) return "";
+
+  const hasImages = msg.images && msg.images.length > 0;
+  const hasFiles = msg.files && msg.files.length > 0;
+  let result = "";
+
+  if (hasImages) {
+    result += getImageContainer(msg);
+  }
+
+  if (hasFiles) {
+    result += getFilesContainer(msg);
+  }
+
+  let textPart = formatCodeBlock(
+    typeof msg === "string" ? msg : msg.text || ""
+  );
+
+  textPart = marked.parse(textPart);
+
+  return result + textPart;
+};
+
+const handlePaste = (event) => {
+  const items = event.clipboardData.items;
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      const reader = new FileReader();
+
+      const fileType = file.type.split("/")[1];
+      const timestamp = new Date().getTime();
+      const uniqueFilename = `pasted-image-${timestamp}.${fileType}`;
+
+      reader.onload = () => {
+        selectedImages.value.push({
+          filename: uniqueFilename,
+          base64: reader.result,
+        });
+        nextTick(() => {
+          adjustTextareaHeight();
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  }
 };
 
 const cleanHistory = async (chat) => {
@@ -453,11 +450,6 @@ const adjustTextareaHeight = () => {
   textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
 };
 
-const newLine = (event) => {
-  event.preventDefault();
-  userPrompt.value += "\n";
-};
-
 const getUserChat = async (chat) => {
   cleanScreen();
   selectedChatId.value = chat;
@@ -469,35 +461,35 @@ const getUserChat = async (chat) => {
     });
 
     if (!response.ok) {
-      throw new Error(`Request error: ${response.status}`);
+      throw new Error(`Error requesting conversation id: ${response.status}`);
     }
 
     const data = await response.json();
     messages.value = data.response.map((msg) => {
-      // Detectar si el contenido tiene una imagen en base64
       const base64Match = msg.content.match(
         /data:image\/[a-zA-Z]+;base64,[^"'\s]+/
       );
-      // Detectar si el contenido tiene una URL de imagen
       const urlMatch = msg.content.match(/'url':\s*'([^']+)'/);
+      const directUrlMatch = msg.content.match(/https:\/\/[^\s"']*/);
 
-      if (base64Match || urlMatch) {
-        // Si encontramos una imagen (base64 o URL)
+      if (base64Match || urlMatch || directUrlMatch) {
         return {
           isUser: msg.role === "user",
           text: {
-            // Para mensajes con URL, no incluimos el texto original
-            text: urlMatch ? "" : msg.content,
+            text: urlMatch || directUrlMatch ? "" : msg.content,
             images: [
               {
                 base64: base64Match ? base64Match[0] : null,
-                url: urlMatch ? urlMatch[1] : null,
+                url: urlMatch
+                  ? urlMatch[1]
+                  : directUrlMatch
+                  ? directUrlMatch
+                  : null,
               },
             ],
           },
         };
       } else {
-        // Es un mensaje de texto normal
         return {
           text: msg.content,
           isUser: msg.role === "user",
@@ -516,15 +508,7 @@ const getUserChat = async (chat) => {
   }
 };
 
-const toggleChurn = () => {
-  isChurn.value = !isChurn.value;
-};
-
-const cleanScreen = () => {
-  messages.value = [];
-};
-
-const chooseModel = async (model) => {
+const createConversation = async (model) => {
   cleanScreen();
   const response = await fetch(`${api}/api/lastChat`, {
     method: "GET",
@@ -581,8 +565,12 @@ const handleFileUpload = (event) => {
 const handleImageUpload = (event) => {
   const files = event.target.files;
   if (!files.length) return;
-
   Array.from(files).forEach((file) => {
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      errorMessage.value = `La imagen supera el límite de 1 MB.`;
+      setTimeout(() => (errorMessage.value = ""), 4000);
+      return;
+    }
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
@@ -597,41 +585,6 @@ const handleImageUpload = (event) => {
   });
 
   event.target.value = "";
-};
-
-const formatMessage = (text) => {
-  if (!text) return "";
-
-  const codeBlockRegex = /```([a-zA-Z]*)\n([\s\S]*?)```/g;
-
-  const formattedText = text.replace(
-    codeBlockRegex,
-    (match, language, code) => {
-      return `<div class="code-block">
-            <div class="code-header">
-              <span class="code-language">${language || "code"}</span>
-              <button class="copy-button" onclick="copyToClipboard(this)">Copy</button>
-            </div>
-            <pre><code class="${language || ""}">${escapeHtml(
-        code
-      )}</code></pre>
-          </div>`;
-    }
-  );
-
-  return formattedText
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.*?)\*/g, "<em>$1</em>")
-    .replace(/\n/g, "<br>");
-};
-
-const escapeHtml = (unsafe) => {
-  return unsafe
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 };
 
 window.copyToClipboard = (button) => {
@@ -703,24 +656,22 @@ const sendPrompt = async () => {
     selectedFiles.value.length === 0
   )
     return;
-
   //Get images if not empty
   const imagesToSend =
     selectedImages.value.length > 0 ? [...selectedImages.value] : [];
   //Get files if not empty
   const filesToSend =
     selectedFiles.value.length > 0 ? [...selectedFiles.value] : [];
-
+  //Manage data to send
   const formData = new FormData();
-
   formData.append("modelUser", modelUsing.value);
   formData.append("username", String(selectedChatId.value));
   formData.append("isChurn", isChurn.value);
   formData.append("images", JSON.stringify(imagesToSend));
   filesToSend.forEach((file, i) => formData.append("files", file));
-
   const promptText = userPrompt.value;
   formData.append("prompt", promptText);
+
   userPrompt.value = "";
 
   if (textareaRef.value) {
@@ -735,7 +686,7 @@ const sendPrompt = async () => {
     },
     isUser: true,
   });
-
+  //Clean vars
   selectedImages.value = [];
   selectedFiles.value = [];
 
@@ -744,6 +695,7 @@ const sendPrompt = async () => {
     isUser: false,
     isTyping: true,
   };
+
   messages.value.push(typingMessage);
   loading.value = true;
 
@@ -759,57 +711,53 @@ const sendPrompt = async () => {
 
     if (isImageGeneration.value) {
       response = await generateImg(promptText);
+      data = await response.json();
+      const imageUrl = data.response.imageUrl || data.response;
+      messages.value.pop();
+
+      const messageText = data.response.text || "Generated image:";
+
+      const imageHtml = `
+                <div>
+                  <p>${messageText}</p>
+                  <div class="message-image-container">
+                    <img src="${imageUrl}" alt="Generated Image" class="message-image"/>
+
+                  </div>
+                </div>
+              `;
+
+      messages.value.push({
+        text: imageHtml,
+        isUser: false,
+      });
     } else {
       response = await fetch(`${api}/api/query_database`, {
         method: "POST",
         body: formData,
       });
-    }
+      messages.value.pop();
 
-    data = await response.json();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
 
-    messages.value.pop();
-
-    if (data.error) {
-      let errorMessage = data.error;
-      if (
-        typeof data.error === "string" &&
-        data.error.includes("OpenAI API rate limit")
-      ) {
-        errorMessage =
-          "The OpenAI API rate limit has been exceeded. Please try again later.";
-      }
-
-      messages.value.push({
-        text: `⚠️ Error: ${errorMessage}`,
+      const botMessage = {
+        text: "",
         isUser: false,
-      });
+      };
 
-      showError(errorMessage);
-    } else {
-      if (isImageGeneration.value) {
-        const imageUrl = data.response.imageUrl || data.response;
-        const messageText = data.response.text || "Generated image:";
+      messages.value.push(botMessage);
+      let assistant_response = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-        const imageHtml = `
-                <div>
-                  <p>${messageText}</p>
-                  <div class="message-image-container">
-                    <img src="${imageUrl}" alt="Generated Image" class="message-image"/>
-                    <a href="${imageUrl}" download="generated-image.png" class="download-button">
-                      Descargar imagen
-                    </a>
-                  </div>
-                </div>
-              `;
+        const chunk = decoder.decode(value, { stream: true });
+        assistant_response += chunk;
 
-        messages.value.push({
-          text: imageHtml,
-          isUser: false,
-        });
-      } else {
-        console.log(data.response);
-        messages.value.push({ text: data.response, isUser: false });
+        messages.value[messages.value.length - 1].text = assistant_response;
+
+        console.log("Recibido:", chunk);
       }
     }
   } catch (err) {
@@ -822,12 +770,22 @@ const sendPrompt = async () => {
     showError(err.message);
   } finally {
     loading.value = false;
+    applyCodeHighlighting();
+
     await nextTick(() => {
       if (messagesContainer.value) {
         messagesContainer.value.scrollTop =
           messagesContainer.value.scrollHeight;
       }
     });
+  }
+};
+
+const handleModel = () => {
+  if (modelUsing.value === 1) {
+    modelUsing.value === 2;
+  } else {
+    modelUsing.value === 1;
   }
 };
 
@@ -838,6 +796,7 @@ const generateImg = async (prompt) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt,
+        username: String(selectedChatId.value),
       }),
     });
 
@@ -847,11 +806,36 @@ const generateImg = async (prompt) => {
   }
 };
 
-const handleModel = () => {
-  if (modelUsing.value === 1) {
-    modelUsing.value === 2;
-  } else {
-    modelUsing.value === 1;
-  }
+const toggleDarkMode = () => {
+  isDarkMode.value = !isDarkMode.value;
+};
+const showDeleteOption = (chat) => {
+  deleteOption.value = deleteOption.value === chat ? null : chat;
+};
+const removeImage = (index) => {
+  selectedImages.value.splice(index, 1);
+};
+
+const removeFile = (index) => {
+  selectedFiles.value.splice(index, 1);
+};
+
+const toggleSidebar = () => {
+  isSidebarOpen.value = !isSidebarOpen.value;
+};
+const handleImageGeneration = () => {
+  isImageGeneration.value = !isImageGeneration.value;
+};
+const toggleChurn = () => {
+  isChurn.value = !isChurn.value;
+};
+
+const cleanScreen = () => {
+  messages.value = [];
+};
+
+const newLine = (event) => {
+  event.preventDefault();
+  userPrompt.value += "\n";
 };
 </script>

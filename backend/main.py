@@ -28,14 +28,13 @@ app.mount("/images", StaticFiles(directory="images"), name="images")
 app.mount("/files", StaticFiles(directory="files"), name="files")
 
 
-
 # Client to communicate with CHATGPT
 clientGPT = openai.OpenAI(
     api_key=""
 )
 # Client to communicate with Deepseek
 clientDeepSeek = openai.OpenAI(
-    api_key="", base_url="https://api.deepseek.com")
+    api_key="", base_url="https://api.deepseek.com/v1")
 
 
 lastID = -1
@@ -82,6 +81,7 @@ app.add_middleware(
 cx_Oracle.init_oracle_client(lib_dir=r"/opt/oracle/instantclient_19_26")
 
 
+
 DB_CONFIG = {
     "username": "ninhdt4",
     "password": "Bitel@123$",
@@ -118,7 +118,7 @@ def get_all_table_names(conn):
 def get_table_data(conn, table_name):
     try:
         cursor = conn.cursor()
-        query = f"SELECT * FROM {table_name}"
+        query = f"SELECT * FROM {table_name} WHERE ROWNUM < 10"
         cursor.execute(query)
         columns = [col[0] for col in cursor.description]
         rows = cursor.fetchall()
@@ -143,17 +143,12 @@ def read_conversation_txt(username):
             valid_roles = {"user", "system", "assistant"}
 
             for line in lines:
-                line = line.strip()
-
-                # Si es una línea vacía, continúa agregando contenido al mensaje actual
-                if not line:
-                    if current_role and current_content:
-                        current_content.append("")
-                    continue
+                line = line.rstrip('\n')
 
                 if line.startswith("INITMESSAGE - "):
                     # Si hay un mensaje previo en construcción, agrégalo antes de procesar el nuevo
                     if current_role and current_content:
+                        content_text = "\n".join(current_content)
                         conversations[username].append(Interaction(
                             role=current_role,
                             content="\n".join(current_content),
@@ -174,11 +169,11 @@ def read_conversation_txt(username):
                         if len(message_parts) == 2:
                             role, content = message_parts
                             role = role.strip().lower()
-                            content = content.strip()
+                            # content = content.strip()
 
                             if role in valid_roles:
                                 current_role = role
-                                current_content.append(content)
+                                current_content.append(content.rstrip())
                 else:
                     # Si la línea no empieza con "INITMESSAGE - ", la agregamos al mensaje actual
                     if current_role:
@@ -233,7 +228,7 @@ async def clear_conversation(request: dict):
         print(f"{e}")
 
 
-async def send_data_to_ia(modelUser, clientUser, username):
+async def send_data_to_ia(modelUser, clientUser, conversation, username):
     conn = get_oracle_connection()
 
     try:
@@ -241,24 +236,27 @@ async def send_data_to_ia(modelUser, clientUser, username):
         tables = get_all_table_names(conn)
         print("Tables:", tables)
 
-        data_message = "Here is the database information for your analysis:\n"
+        data_message = "Here is the database structure for your analysis:\n"
         for table in tables:
             try:
                 df = get_table_data(conn, table)
-                data_message += f"Table {table}:\n{df.to_string()}\n\n"
+                data_message += f"Table {table}, columns: {list(df.columns)}\nSample rows:\n{df.to_markdown(index=False)}\n\n"
                 print(f"Data from {table} completed")
             except Exception as e:
                 print(f"Error fetching data from {table}: {str(e)}")
         # Append data to conversation history
-        conversations[username].append(
-            {"role": "user", "content": data_message})
+        conversation.append(
+            Interaction(
+                role="user",
+                content=data_message,
+            ))
         save_conversation_txt(username, modelUser)
 
-        # Get the response from OpenAI library
+        # Get the response from OpenAI library. No response needed
         response = clientUser.chat.completions.create(
             model=modelUser,
             messages=conversations[username],
-            max_tokens=4000
+            max_tokens=10
         )
 
         # Save the response in the conversation history
@@ -326,7 +324,7 @@ def processInputModel(modelUser):
         modelToUse = 'gpt-4.1'
         clientUser = clientGPT
     else:
-        modelToUse = 'deepseek-chat'
+        modelToUse = 'deepseek-reasoner'
         clientUser = clientDeepSeek
 
     return modelToUse, clientUser
@@ -399,17 +397,20 @@ async def query_database(modelUser: int = Form(...),
                          files: List[UploadFile] = File(default=[])
                          ):
     pdfText = None
+    excelText = None
     textCode = None
     await getConversations(username)
     conversation = conversations[username]
     modelToUse, userClient = processInputModel(int(modelUser))
+    print(f"{modelToUse, userClient}")
 
     if isChurn:
-        await send_data_to_ia(modelToUse, userClient, username)
+        await send_data_to_ia(modelToUse, userClient, conversation, username)
 
     filenames = await storeFiles(files)
     if filenames:
         pdfText = await readPdf(files)
+        excelText = await readCSV(files)
         textCode = await readCode(filenames)
 
     await storeImages(images, conversation)
@@ -420,6 +421,7 @@ async def query_database(modelUser: int = Form(...),
             content=prompt,
         )
     )
+    print(f'{prompt}')
 
     try:
         openai_messages = []
@@ -440,6 +442,14 @@ async def query_database(modelUser: int = Form(...),
                 )
             )
 
+        if excelText:
+            conversation.append(
+                Interaction(
+                    role="user",
+                    content=f"Here is the extracted content from the PDFs:\n{excelText}"
+                )
+            )
+
         if textCode:
             conversation.append(
                 Interaction(
@@ -456,18 +466,25 @@ async def query_database(modelUser: int = Form(...),
 
         save_conversation_txt(username, modelUser)
 
-        # Bot response
-        # assistant_message = await getChurnOutput(
-        #    userClient, modelToUse, openai_messages) if isChurn else await getBasicOutput(
-        #        userClient, modelToUse, openai_messages)
-
         async def event_generator():
             assistant_message = ''
-            response = userClient.chat.completions.create(
-                model=modelToUse,
-                messages=openai_messages,
-                max_tokens=800,
-                stream=True)
+            if isChurn:
+                response = userClient.chat.completions.create(
+                    model=modelToUse,
+                    messages=openai_messages,  # conversations[username]
+                    temperature=0.1,  # Low value = more deterministic
+                    top_p=0.95,  # High precision
+                    presence_penalty=0.1,  # Low presence penalty
+                    frequency_penalty=0.1,  # Avoid repetition
+                    max_tokens=4096,  # may need change
+                    stream=True
+                )
+            else:
+                response = userClient.chat.completions.create(
+                    model=modelToUse,
+                    messages=openai_messages,
+                    max_tokens=800,
+                    stream=True)
 
             for chunk in response:
                 delta = chunk.choices[0].delta
@@ -527,31 +544,6 @@ async def getImageOutput(request: dict):
     return {"response": image_url}
 
 
-async def getChurnOutput(userClient, modelToUse, openai_messages):
-    response = userClient.chat.completions.create(
-        model=modelToUse,
-        messages=openai_messages,  # conversations[username]
-        temperature=0.1,  # Low value = more deterministic
-        top_p=0.95,  # High precision
-        presence_penalty=0.1,  # Low presence penalty
-        frequency_penalty=0.1,  # Avoid repetition
-        max_tokens=4096  # may need change
-    )
-    assistant_message = response.choices[0].message.content.strip()
-    return assistant_message
-
-
-async def getBasicOutput(userClient, modelToUse, openai_messages):
-    response = userClient.chat.completions.create(
-        model=modelToUse,
-        messages=openai_messages,  # conversations[username]
-        max_tokens=800  # may need change
-
-    )
-    assistant_message = response.choices[0].message.content.strip()
-    return assistant_message
-
-
 async def readPdf(pdfFile: UploadFile):
     text = ''
     try:
@@ -563,7 +555,7 @@ async def readPdf(pdfFile: UploadFile):
                         text += page.extract_text()
             return text
     except Exception as e:
-        return {"response": e}
+        return e
 
     return None
 
@@ -621,3 +613,33 @@ async def readCode(filenames):
     if textCode == '':
         return None
     return f"```{textCode}\n```"
+
+
+@app.get("/test-deepseek")
+def test_deepseek():
+    try:
+        response = clientDeepSeek.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant"},
+                {"role": "user", "content": "Hello"},
+            ],
+            stream=False
+        )
+        return {"response": response.choices[0].message.content}
+    except Exception as e:
+        return e
+
+
+async def readCSV(excelFile: UploadFile):
+    text = ''
+    try:
+        if excelFile:
+            for excel in excelFile:
+                if excel.filename.lower().endswith(".xlsx"):
+                    df = pd.read_excel(excel.file)
+                    text += df.to_string() + "\n"
+            return text
+    except Exception as e:
+        return e
+    return None
